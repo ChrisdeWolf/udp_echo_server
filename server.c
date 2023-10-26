@@ -154,7 +154,17 @@ int main(void) {
         printf("Received Packet: line_index = %d\n", packet.line_index);
         printf("Received Packet: buffer = %s\n", packet.buffer);
 
-        writeBufferToFile(&packet);
+        // Simulate a lost ACKs (~10% chance) TODO: remove once done
+        if (rand() % 10 != 0) {
+            // Send ACK back to the client
+            if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
+                       addr_len) < 0) {
+                perror("ACK sending failed");
+                exit(1);
+            }
+
+            writeBufferToFile(&packet);
+        }
     }
     close(sockfd);
 

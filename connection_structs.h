@@ -1,23 +1,16 @@
 typedef struct {
-    int file_size;
-    int file_index;
-    int line_index;
-    char buffer[1024];  // TODO: use MAXBUFLENGTH
+    int file_size;      // total lines in the file
+    int file_index;     // file index 0-9 (effectively the filename)
+    int line_index;     // current line index 0-file_size-1
+    char buffer[1024];  // data for that line
 } Packet;
 
-// typedef struct
-// {
-//     // PacketHeader header;
-//     PacketData data;
-// } Packet;
-
 typedef struct {
-    // int syn_sent;
-    int initialized;
-    int finished;
-    int file_size;
-    int file_index;
-    int line_index;
+    int initialized;  // bool - is connection initialized
+    int finished;     // bool - is connection finished
+    int file_size;    // total lines in the file
+    int file_index;   // file index 0-9 (effectively the filename)
+    int line_index;   // current line index 0-file_size-1
 } Connection;
 
 // typedef struct
