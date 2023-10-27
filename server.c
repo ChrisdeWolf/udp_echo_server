@@ -1,5 +1,5 @@
 /*
-** listener.c -- a datagram sockets "server" demo
+** server.c -- a datagram sockets "server" demo
 */
 
 #include <arpa/inet.h>
@@ -17,8 +17,8 @@
 #include "connection_structs.h"
 
 #define MYPORT "7777"  // the port users will be connecting to
-
 #define MAXBUFLEN 1024
+#define MAX_FILES 10
 
 void clearServerFiles() {
     const char *directory_path = "./server_files";
@@ -46,6 +46,12 @@ void clearServerFiles() {
     closedir(dir);
 }
 
+void initializeFileBuffers(FileBuffer file_buffers[]) {
+    for (int i = 0; i < MAX_FILES; i++) {
+        file_buffers[i].next_expected_line_index = 0;
+    }
+}
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa) {
     if (sa->sa_family == AF_INET) {
@@ -70,17 +76,11 @@ void writeBufferToFile(Packet *packet) {
 
     // Write to the specified line_index
     int current_line = 0;
-    // char *token = strtok(packet->buffer, "\n");
-
-    // while (token != NULL) {
     while (current_line < packet->file_size) {
-        printf("current=%d, line_index=%d\n", current_line, packet->line_index);
         if (current_line == packet->line_index) {
-            // fprintf(file, "%s\n", token);
             fprintf(file, "%s", packet->buffer);
         }
         current_line++;
-        // token = strtok(NULL, "\n");
     }
 
     fclose(file);
@@ -92,12 +92,14 @@ int main(void) {
     int rv;
     int numbytes;
     struct sockaddr_storage their_addr;
-    // char buf[MAXBUFLEN];
     Packet packet;
+    FileBuffer file_buffers[MAX_FILES];
     socklen_t addr_len;
     char s[INET6_ADDRSTRLEN];
 
+    // server initialization
     clearServerFiles();
+    initializeFileBuffers(file_buffers);
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET6;  // set to AF_INET to use IPv4
@@ -113,13 +115,13 @@ int main(void) {
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
             -1) {
-            perror("listener: socket");
+            perror("server: socket");
             continue;
         }
 
         if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
-            perror("listener: bind");
+            perror("server: bind");
             continue;
         }
 
@@ -127,14 +129,13 @@ int main(void) {
     }
 
     if (p == NULL) {
-        fprintf(stderr, "listener: failed to bind socket\n");
+        fprintf(stderr, "server: failed to bind socket\n");
         return 2;
     }
 
     freeaddrinfo(servinfo);
 
-    printf("listener: waiting to recvfrom...\n");
-
+    printf("server: waiting to recvfrom...\n");
     while (1) {
         addr_len = sizeof their_addr;
         if ((numbytes = recvfrom(sockfd, &packet, sizeof(Packet), 0,
@@ -144,27 +145,93 @@ int main(void) {
             exit(1);
         }
 
-        printf("listener: got packet from %s\n",
+        printf("server: got packet from %s\n",
                inet_ntop(their_addr.ss_family,
                          get_in_addr((struct sockaddr *)&their_addr), s,
                          sizeof s));
-        printf("listener: packet is %d bytes long\n", numbytes);
-        printf("Received Packet: file_size = %d\n", packet.file_size);
-        printf("Received Packet: file_index = %d\n", packet.file_index);
-        printf("Received Packet: line_index = %d\n", packet.line_index);
-        printf("Received Packet: buffer = %s\n", packet.buffer);
+        printf("server: packet is %d bytes long\n", numbytes);
+        printf(
+            "Received Packet: file_size: %d, file_index: %d, line_index: %d, "
+            "line_end_index: %d, buffer = %s\n",
+            packet.file_size, packet.file_index, packet.line_index,
+            packet.line_end_index, packet.buffer);
 
-        // Simulate a lost ACKs (~10% chance) TODO: remove once done
-        if (rand() % 10 != 0) {
+        // bounds check the received data
+        if (packet.file_index < 0 || packet.file_index >= MAX_FILES ||
+            packet.line_index < 0) {
+            printf("Invalid packet: file_index or line_index out of range\n");
+            continue;
+        }
+
+        FileBuffer *file_buffer = &file_buffers[packet.file_index];
+
+        printf(
+            "packet.line_index=%d, file_buffer->next_expected_line_index=%d\n",
+            packet.line_index, file_buffer->next_expected_line_index);
+        if (packet.line_index == file_buffer->next_expected_line_index) {
+            // Packet is in order, write it to the file
+            printf("packet is in order!\n");
+
+            // // Simulate a lost ACKs (~10% chance) TODO: remove once done
+            // if (rand() % 10 != 0) {
             // Send ACK back to the client
             if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
                        addr_len) < 0) {
                 perror("ACK sending failed");
                 exit(1);
             }
+            // }
 
             writeBufferToFile(&packet);
+
+            // Increment next expected line index
+            file_buffer->next_expected_line_index = packet.line_end_index + 1;
+
+            // Check if any subsequent out-of-order packets can now be processed
+            while (file_buffer->next_expected_line_index < MAX_LINES) {
+                Packet *next_packet =
+                    &file_buffer->buffer[file_buffer->next_expected_line_index];
+                if (next_packet->line_index ==
+                    file_buffer->next_expected_line_index) {
+                    // write to file and increment next expected line index
+                    printf("found the next line in the buffer! line_index: %d",
+                           next_packet->line_index);
+                    writeBufferToFile(next_packet);
+                    file_buffer->next_expected_line_index =
+                        next_packet->line_end_index + 1;
+                } else {
+                    break;  // Packet is still out-of-order
+                }
+            }
+        } else if (packet.line_index > file_buffer->next_expected_line_index) {
+            // Packet is out-of-order, store it in the file buffer
+            printf("packet is out-of-order!\n");
+            file_buffer->buffer[packet.line_index] = packet;
+
+            // // Simulate a lost ACKs (~10% chance) TODO: remove once done
+            // if (rand() % 10 != 0) {
+            // Send ACK back to the client
+            if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
+                       addr_len) < 0) {
+                perror("ACK sending failed");
+                exit(1);
+            }
+            // }
         }
+
+        // // Simulate a lost ACKs (~10% chance) TODO: remove once done
+        // if (rand() % 10 != 0) {
+        //     // Send ACK back to the client
+        //     if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
+        //                addr_len) < 0) {
+        //         perror("ACK sending failed");
+        //         exit(1);
+        //     }
+
+        //     writeBufferToFile(&packet);
+        // }
+
+        printf("\n");
     }
     close(sockfd);
 

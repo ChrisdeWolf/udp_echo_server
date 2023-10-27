@@ -117,33 +117,35 @@ int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
     }
     printf("client: sent %d bytes to server\n", numbytes);
 
-    // setup timeout timer
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = 0;
-    FD_ZERO(&read_fds);
-    FD_SET(sockfd, &read_fds);
+    // // setup timeout timer
+    // timeout.tv_sec = TIMEOUT_SEC;
+    // timeout.tv_usec = 0;
+    // FD_ZERO(&read_fds);
+    // FD_SET(sockfd, &read_fds);
 
-    // use of select here for the async timer
+    // // use of select here for the async timer
+    // //
     // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
-    int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
+    // int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
 
-    if (ready < 0) {
-        perror("Select failed");
-        return -1;
-    } else if (ready == 0) {
-        return 0;
-    }
+    // if (ready < 0) {
+    //     perror("Select failed");
+    //     return -1;
+    // } else if (ready == 0) {
+    //     return 0;
+    // }
 
-    // check for a returned ACK
-    char ack[3];
-    socklen_t addr_len = sizeof(p);
-    ssize_t ack_length =
-        recvfrom(sockfd, ack, sizeof(ack), 0, (struct sockaddr *)&p, &addr_len);
+    // // check for a returned ACK
+    // char ack[3];
+    // socklen_t addr_len = sizeof(p);
+    // ssize_t ack_length =
+    //     recvfrom(sockfd, ack, sizeof(ack), 0, (struct sockaddr *)&p,
+    //     &addr_len);
 
-    if (ack_length < 0) {
-        perror("ACK receive error");
-        return -1;
-    }
+    // if (ack_length < 0) {
+    //     perror("ACK receive error");
+    //     return -1;
+    // }
 
     return 1;
 }
@@ -192,9 +194,22 @@ int main(int argc, char *argv[]) {
         connections[i].initialized = 0;
     }
 
+    // Create an array to hold the packets
+    Packet packets[100];
+
+    // Initialize the packets
+    for (int i = 0; i < 100; i++) {
+        clearPacketBuffer(&packets[i]);
+        packets[i].file_size = -1;  // Initialize file_size to an invalid value
+    }
+
+    // Create an index for packets
+    int packetIndex = 0;
+
     while (allConnectionsFinished() != 1) {
-        Packet *packet = malloc(sizeof(Packet));
+        // Packet *packet = malloc(sizeof(Packet));
         int randomFileIndex = getRandomFileIndex();
+        // int randomFileIndex = 0;
         Connection *connection = getConnection(randomFileIndex);
         // TODO: should skip this loop if the file has already completed
         //		... so check for connection->finished == 1
@@ -215,33 +230,42 @@ int main(int argc, char *argv[]) {
             connection->file_index, connection->line_index,
             connection->file_size, connection->initialized,
             connection->finished);
-        generatePayload(connection, packet);
 
-        int retransmissions = 0;
+        // Generate the payload for the current connection
+        clearPacketBuffer(&packets[packetIndex]);  // Clear the buffer
+        generatePayload(connection, &packets[packetIndex]);
 
-        while (retransmissions <= MAX_RETRANSMISSIONS) {
-            int result = sendAndWaitForACK(sockfd, p, packet);
-            if (result == 0) {
-                printf("timeout! re-transmitting...\n");
-                retransmissions++;
-            } else if (result == -1) {
-                // Handle error
-                printf("error!\n");
-                break;
-            } else {
-                printf("ACK received!\n");
-                break;
-            }
-        }
-        if (retransmissions > MAX_RETRANSMISSIONS) {
-            printf("Max retransmissions reached for packet. Aborting.\n");
-            break;
-        }
+        // Move to the next index for the next packet
+        packetIndex++;
+        // generatePayload(connection, &packets[randomFileIndex]);
 
-        clearPacketBuffer(packet);  // Clear the buffer
-        free(packet);               // Free allocated memory
+        // Packet *packet = malloc(sizeof(Packet));  // Allocate a new packet
+        // clearPacketBuffer(packet);                // Clear the buffer
+        // generatePayload(connection, packet);
+        // packets[randomFileIndex] = *packet;  // Copy the packet to the array
+        // free(packet);                        // Free the allocated memory
         printf("\n");
     }
+
+    // Shuffle the packets
+    for (int i = packetIndex - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        Packet temp = packets[i];
+        packets[i] = packets[j];
+        packets[j] = temp;
+    }
+
+    // Now send the shuffled packets
+    for (int i = 0; i < packetIndex; i++) {
+        if (packets[i].file_size != -1) {
+            if (sendAndWaitForACK(sockfd, p, &packets[i]) == -1) {
+                perror("Failed to send packet");
+                // Handle the error
+                break;  // Exit the loop on error
+            }
+        }
+    }
+
     freeaddrinfo(servinfo);
     close(sockfd);
 
