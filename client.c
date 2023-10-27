@@ -62,7 +62,7 @@ void clearPacketBuffer(Packet *packet) {
 }
 
 int copyLineToPacket(FILE *file, Packet *packet, int current_index) {
-    char line[1024];  // TODO: use MAXBUFLENGTH
+    char line[MAX_BUF_LEN];
     int i = 0;
 
     int line_offset = (rand() % 3);
@@ -99,6 +99,7 @@ void generatePayload(Connection *connection, Packet *packet) {
 
     // so the server can track what line_index to expect next
     packet->line_end_index = new_offset;
+    packet->checksum = calculateChecksum(packet->buffer);
 
     if (new_offset >= connection->file_size - 1) connection->finished = 1;
 

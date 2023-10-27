@@ -16,8 +16,8 @@
 
 #include "connection_structs.h"
 
-#define MYPORT "7777"  // the port users will be connecting to
-#define MAXBUFLEN 1024
+#define MYPORT "7777"   // the port users will be connecting to
+#define MAXBUFLEN 1024  // TODO: delete
 #define MAX_FILES 10
 
 void clearServerFiles() {
@@ -156,12 +156,27 @@ int main(void) {
             packet.file_size, packet.file_index, packet.line_index,
             packet.line_end_index, packet.buffer);
 
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // ~~~~~~ data-checking. TODO: ask for re-Tx from client ~~~~~~
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // Calculate the checksum for the received packet (excluding the
+        // checksum field)
+        unsigned short receivedChecksum = calculateChecksum(packet.buffer);
+        printf("packet checksum=%d, computed checksum=%d\n", packet.checksum,
+               receivedChecksum);
+        if (receivedChecksum != packet.checksum) {
+            printf("Received packet with invalid checksum. Discarding.\n");
+            continue;
+        }
         // bounds check the received data
         if (packet.file_index < 0 || packet.file_index >= MAX_FILES ||
             packet.line_index < 0) {
             printf("Invalid packet: file_index or line_index out of range\n");
             continue;
         }
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
         // Simulate a lost ACKs (~10% chance) TODO: remove once done
         if (rand() % 10 != 0) {
             // Send ACK back to the client
