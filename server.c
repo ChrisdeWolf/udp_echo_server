@@ -162,75 +162,68 @@ int main(void) {
             printf("Invalid packet: file_index or line_index out of range\n");
             continue;
         }
-
-        FileBuffer *file_buffer = &file_buffers[packet.file_index];
-
-        printf(
-            "packet.line_index=%d, file_buffer->next_expected_line_index=%d\n",
-            packet.line_index, file_buffer->next_expected_line_index);
-        if (packet.line_index == file_buffer->next_expected_line_index) {
-            // Packet is in order, write it to the file
-            printf("packet is in order!\n");
-
-            // // Simulate a lost ACKs (~10% chance) TODO: remove once done
-            // if (rand() % 10 != 0) {
+        // Simulate a lost ACKs (~10% chance) TODO: remove once done
+        if (rand() % 10 != 0) {
             // Send ACK back to the client
             if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
                        addr_len) < 0) {
                 perror("ACK sending failed");
                 exit(1);
             }
-            // }
 
-            writeBufferToFile(&packet);
+            FileBuffer *file_buffer = &file_buffers[packet.file_index];
 
-            // Increment next expected line index
-            file_buffer->next_expected_line_index = packet.line_end_index + 1;
+            printf(
+                "packet.line_index=%d, "
+                "file_buffer->next_expected_line_index=%d\n",
+                packet.line_index, file_buffer->next_expected_line_index);
+            if (packet.line_index == file_buffer->next_expected_line_index) {
+                // Packet is in order, write it to the file
+                printf("packet is in order!\n");
+                writeBufferToFile(&packet);
 
-            // Check if any subsequent out-of-order packets can now be processed
-            while (file_buffer->next_expected_line_index < MAX_LINES) {
-                Packet *next_packet =
-                    &file_buffer->buffer[file_buffer->next_expected_line_index];
-                if (next_packet->line_index ==
-                    file_buffer->next_expected_line_index) {
-                    // write to file and increment next expected line index
-                    printf("found the next line in the buffer! line_index: %d",
-                           next_packet->line_index);
-                    writeBufferToFile(next_packet);
-                    file_buffer->next_expected_line_index =
-                        next_packet->line_end_index + 1;
-                } else {
-                    break;  // Packet is still out-of-order
+                // Increment next expected line index
+                file_buffer->next_expected_line_index =
+                    packet.line_end_index + 1;
+
+                // see if any subsequent out-of-order packets can now be written
+                while (file_buffer->next_expected_line_index < MAX_LINES) {
+                    Packet *next_packet =
+                        &file_buffer
+                             ->buffer[file_buffer->next_expected_line_index];
+                    if (next_packet->line_index ==
+                        file_buffer->next_expected_line_index) {
+                        // write to file and increment next expected line index
+                        printf(
+                            "found the next line in the buffer! line_index: %d",
+                            next_packet->line_index);
+                        writeBufferToFile(next_packet);
+                        file_buffer->next_expected_line_index =
+                            next_packet->line_end_index + 1;
+                    } else {
+                        break;  // Packet is still out-of-order
+                    }
                 }
+            } else if (packet.line_index >
+                       file_buffer->next_expected_line_index) {
+                // Packet is out-of-order, store it in the file buffer
+                printf("packet is out-of-order!\n");
+                file_buffer->buffer[packet.line_index] = packet;
             }
-        } else if (packet.line_index > file_buffer->next_expected_line_index) {
-            // Packet is out-of-order, store it in the file buffer
-            printf("packet is out-of-order!\n");
-            file_buffer->buffer[packet.line_index] = packet;
 
             // // Simulate a lost ACKs (~10% chance) TODO: remove once done
             // if (rand() % 10 != 0) {
-            // Send ACK back to the client
-            if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
-                       addr_len) < 0) {
-                perror("ACK sending failed");
-                exit(1);
-            }
+            //     // Send ACK back to the client
+            //     if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr
+            //     *)&their_addr,
+            //                addr_len) < 0) {
+            //         perror("ACK sending failed");
+            //         exit(1);
+            //     }
+
+            //     writeBufferToFile(&packet);
             // }
         }
-
-        // // Simulate a lost ACKs (~10% chance) TODO: remove once done
-        // if (rand() % 10 != 0) {
-        //     // Send ACK back to the client
-        //     if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
-        //                addr_len) < 0) {
-        //         perror("ACK sending failed");
-        //         exit(1);
-        //     }
-
-        //     writeBufferToFile(&packet);
-        // }
-
         printf("\n");
     }
     close(sockfd);
