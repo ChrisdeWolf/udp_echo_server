@@ -19,7 +19,7 @@
 
 #define SERVERPORT "7777"  // the port users will be connecting to
 #define MAX_CONNECTIONS 10
-#define TIMEOUT_SEC 2
+#define TIMEOUT_SEC 1
 #define MAX_RETRANSMISSIONS 3
 
 Connection connections[MAX_CONNECTIONS];  // TODO: move this into code
@@ -99,7 +99,7 @@ void generatePayload(Connection *connection, Packet *packet) {
 
     // so the server can track what line_index to expect next
     packet->line_end_index = new_offset;
-    packet->checksum = calculateChecksum(packet->buffer);
+    packet->checksum = getChecksum(packet->buffer);
 
     if (new_offset >= connection->file_size - 1) connection->finished = 1;
 
@@ -135,7 +135,7 @@ int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
         return 0;
     }
 
-    // check for a returned ACK
+    // Check for a returned ACK or NACK
     char ack[3];
     socklen_t addr_len = sizeof(p);
     ssize_t ack_length =
@@ -146,7 +146,15 @@ int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
         return -1;
     }
 
-    return 1;
+    ack[ack_length] = '\0';  // null-terminate the buffer
+    if (strcmp(ack, "ACK") == 0) {
+        return 1;
+    } else if (strcmp(ack, "NCK") == 0) {
+        return 0;
+    } else {
+        printf("Received an unknown response: %s\n", ack);
+        return -1;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -223,10 +231,10 @@ int main(int argc, char *argv[]) {
         while (retransmissions <= MAX_RETRANSMISSIONS) {
             int result = sendAndWaitForACK(sockfd, p, packet);
             if (result == 0) {
-                printf("timeout! re-transmitting...\n");
+                printf("timeout or NACK! re-transmitting...\n");
                 retransmissions++;
             } else if (result == -1) {
-                // Handle error
+                // TODO: handle?
                 printf("error!\n");
                 break;
             } else {

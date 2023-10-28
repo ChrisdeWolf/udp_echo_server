@@ -99,6 +99,7 @@ void generatePayload(Connection *connection, Packet *packet) {
 
     // so the server can track what line_index to expect next
     packet->line_end_index = new_offset;
+    packet->checksum = getChecksum(packet->buffer);
 
     if (new_offset >= connection->file_size - 1) connection->finished = 1;
 

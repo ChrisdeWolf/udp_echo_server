@@ -27,7 +27,7 @@ typedef struct {
     int next_expected_line_index;
 } FileBuffer;
 
-unsigned short calculateChecksum(const char* data) {
+unsigned short getChecksum(const char* data) {
     unsigned int sum = 0;
     int i;
     for (i = 0; i < MAX_BUF_LEN; i++) {

@@ -86,6 +86,26 @@ void writeBufferToFile(Packet *packet) {
     fclose(file);
 }
 
+int isDamagedData(Packet *packet) {
+    // calculate the checksum for the received packet
+    unsigned short serverChecksum = getChecksum(packet->buffer);
+    printf("packet checksum=%d, server checksum=%d\n", packet->checksum,
+           serverChecksum);
+
+    if (serverChecksum != packet->checksum) {
+        printf("Received packet with invalid checksum. Sending NACK.\n");
+        return 1;  // request retransmission
+    }
+
+    if (packet->file_index < 0 || packet->file_index >= MAX_FILES ||
+        packet->line_index < 0) {
+        printf("Invalid/out-of-range packet. Sending NACK.\n");
+        return 1;  // request retransmission
+    }
+
+    return 0;  // no retransmission required
+}
+
 int main(void) {
     int sockfd;
     struct addrinfo hints, *servinfo, *p;
@@ -156,26 +176,14 @@ int main(void) {
             packet.file_size, packet.file_index, packet.line_index,
             packet.line_end_index, packet.buffer);
 
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // ~~~~~~ data-checking. TODO: ask for re-Tx from client ~~~~~~
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // Calculate the checksum for the received packet (excluding the
-        // checksum field)
-        unsigned short receivedChecksum = calculateChecksum(packet.buffer);
-        printf("packet checksum=%d, computed checksum=%d\n", packet.checksum,
-               receivedChecksum);
-        if (receivedChecksum != packet.checksum) {
-            printf("Received packet with invalid checksum. Discarding.\n");
-            continue;
+        // Check for damaged data and ask for re-tx if needed
+        if (isDamagedData(&packet)) {
+            if (sendto(sockfd, "NCK", 3, 0, (struct sockaddr *)&their_addr,
+                       addr_len) < 0) {
+                perror("NACK sending failed");
+            };
+            continue;  // go back to listening
         }
-        // bounds check the received data
-        if (packet.file_index < 0 || packet.file_index >= MAX_FILES ||
-            packet.line_index < 0) {
-            printf("Invalid packet: file_index or line_index out of range\n");
-            continue;
-        }
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
         // Simulate a lost ACKs (~10% chance) TODO: remove once done
         if (rand() % 10 != 0) {
@@ -183,7 +191,6 @@ int main(void) {
             if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
                        addr_len) < 0) {
                 perror("ACK sending failed");
-                exit(1);
             }
 
             FileBuffer *file_buffer = &file_buffers[packet.file_index];
