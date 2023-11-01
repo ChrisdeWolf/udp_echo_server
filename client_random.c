@@ -62,7 +62,7 @@ void clearPacketBuffer(Packet *packet) {
 }
 
 int copyLineToPacket(FILE *file, Packet *packet, int current_index) {
-    char line[MAX_BUF_LEN];
+    char line[MAXBUFLEN];
     int i = 0;
 
     int line_offset = (rand() % 3);

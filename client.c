@@ -36,8 +36,23 @@ int allConnectionsFinished() {
     return 1;
 }
 
-int getRandomFileIndex() {
-    return rand() % 10;  // Generates a random number between 0 and 9
+int getRandomFileIndex(Connection connections[]) {
+    int unfinishedFiles[MAX_CONNECTIONS];
+    int unfinishedCount = 0;
+
+    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+        if (connections[i].finished != 1) {
+            unfinishedFiles[unfinishedCount] = i;
+            unfinishedCount++;
+        }
+    }
+
+    if (unfinishedCount == 0) {
+        return -1;
+    }
+
+    int randomIndex = rand() % unfinishedCount;
+    return unfinishedFiles[randomIndex];
 }
 
 Connection *getConnection(int file_index) {
@@ -62,7 +77,7 @@ void clearPacketBuffer(Packet *packet) {
 }
 
 int copyLineToPacket(FILE *file, Packet *packet, int current_index) {
-    char line[MAX_BUF_LEN];
+    char line[MAXBUFLEN];
     int i = 0;
 
     int line_offset = (rand() % 3);
@@ -101,7 +116,8 @@ void generatePayload(Connection *connection, Packet *packet) {
     packet->line_end_index = new_offset;
     packet->checksum = getChecksum(packet->buffer);
 
-    if (new_offset >= connection->file_size - 1) connection->finished = 1;
+    if (packet->line_end_index >= connection->file_size - 1)
+        connection->finished = 1;
 
     connection->line_index = new_offset + 1;
 }
@@ -116,7 +132,12 @@ int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
         perror("client: sendto");
         return -1;
     }
-    printf("client: sent %d bytes to server\n", numbytes);
+    printf(
+        "packet->file_size: %d, packet->file_index: %d, packet->line_index: "
+        "%d, line_end_index: %d\n",
+        packet->file_size, packet->file_index, packet->line_index,
+        packet->line_end_index);
+    printf("client sent %d bytes to server\n", numbytes);
 
     // setup timeout timer
     timeout.tv_sec = TIMEOUT_SEC;
@@ -155,6 +176,43 @@ int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
         printf("Received an unknown response: %s\n", ack);
         return -1;
     }
+}
+
+void receiveWithTimeout(int sockfd, struct addrinfo *p) {
+    fd_set read_fds;
+    struct timeval timeout;
+
+    timeout.tv_sec = TIMEOUT_SEC;
+    timeout.tv_usec = 0;
+    FD_ZERO(&read_fds);
+    FD_SET(sockfd, &read_fds);
+
+    // use of select here for the async timer
+    // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
+    int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
+
+    if (ready < 0) {
+        perror("Select failed");
+        // return -1;
+    } else if (ready == 0) {
+        printf("timeout! need to just cancel the client if this happens\n");
+        // return 0;
+    } else {
+    }
+
+    // Check for a returned ACK or NACK
+    Packet receivedPacket;
+    socklen_t addr_len = sizeof(p);
+    ssize_t resp_len = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
+                                (struct sockaddr *)&p, &addr_len);
+
+    if (resp_len < 0) {
+        perror("ACK receive error");
+        // return -1;
+    }
+
+    printf("Received a packet from the server.\n");
+    printf("Packet Buffer: %s\n", receivedPacket.buffer);
 }
 
 int main(int argc, char *argv[]) {
@@ -203,7 +261,9 @@ int main(int argc, char *argv[]) {
 
     while (allConnectionsFinished() != 1) {
         Packet *packet = malloc(sizeof(Packet));
-        int randomFileIndex = getRandomFileIndex();
+        int randomFileIndex = getRandomFileIndex(connections);
+        if (randomFileIndex == -1) break;
+
         Connection *connection = getConnection(randomFileIndex);
         // TODO: should skip this loop if the file has already completed
         //		... so check for connection->finished == 1
@@ -217,13 +277,6 @@ int main(int argc, char *argv[]) {
                    randomFileIndex);
         }
 
-        printf(
-            "connection->file_index: %d, "
-            "connection->line_index: %d, connection->file_size: %d, "
-            "connection->initialized: %d, connection->finished: %d\n",
-            connection->file_index, connection->line_index,
-            connection->file_size, connection->initialized,
-            connection->finished);
         generatePayload(connection, packet);
 
         int retransmissions = 0;
@@ -251,6 +304,10 @@ int main(int argc, char *argv[]) {
         free(packet);               // Free allocated memory
         printf("\n");
     }
+
+    // CHATGPT: function call here
+    receiveWithTimeout(sockfd, p);
+
     freeaddrinfo(servinfo);
     close(sockfd);
 

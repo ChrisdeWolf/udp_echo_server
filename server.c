@@ -16,9 +16,11 @@
 
 #include "connection_structs.h"
 
-#define MYPORT "7777"   // the port users will be connecting to
-#define MAXBUFLEN 1024  // TODO: delete
+#define MYPORT "7777"  // the port users will be connecting to
+// #define MAXBUFLEN 1024  // TODO: delete
 #define MAX_FILES 10
+int completed_files = 0;  // TODO: avoid globals
+char concatedFilePath[256] = "./server_files/concatenated.txt";
 
 void clearServerFiles() {
     const char *directory_path = "./server_files";
@@ -83,6 +85,12 @@ void writeBufferToFile(Packet *packet) {
         current_line++;
     }
 
+    if (packet->line_end_index >= packet->file_size - 1) {
+        completed_files++;
+        printf("End of file %d transmission!\n", packet->file_index);
+        printf("completed_files=%d\n", completed_files);
+    }
+
     fclose(file);
 }
 
@@ -104,6 +112,68 @@ int isDamagedData(Packet *packet) {
     }
 
     return 0;  // no retransmission required
+}
+
+void concatFiles() {
+    FILE *concatedFile = fopen(concatedFilePath, "w");
+    if (concatedFile == NULL) {
+        perror("Error opening concatenated file");
+        return;
+    }
+
+    for (int i = 0; i < MAX_FILES; i++) {
+        char filePath[256];
+        snprintf(filePath, sizeof(filePath), "./server_files/quote%d.txt", i);
+
+        FILE *individualFile = fopen(filePath, "r");
+        if (individualFile == NULL) {
+            perror("Error opening individual file");
+            return;
+        }
+        char buffer[MAXBUFLEN];
+        size_t bytesRead;
+        while ((bytesRead = fread(buffer, 1, sizeof(buffer), individualFile)) >
+               0) {
+            fwrite(buffer, 1, bytesRead, concatedFile);
+        }
+        fclose(individualFile);
+    }
+    fclose(concatedFile);
+}
+
+void sendConcatedFile(int sockfd, struct sockaddr_storage their_addr,
+                      socklen_t addr_len) {
+    FILE *concatedFile = fopen(concatedFilePath, "r");
+    if (concatedFile == NULL) {
+        perror("Error opening concatenated file");
+        return;
+    }
+
+    // packet setup
+    Packet packet;
+    packet.file_index = 0;
+    packet.line_index = 0;
+    // read entire file into the packet buffer
+    size_t bytesRead = fread(packet.buffer, 1, MAXBUFLEN, concatedFile);
+    // Set the file_size to the number of bytes read
+    packet.file_size = (int)bytesRead;
+    packet.checksum = getChecksum(packet.buffer);
+
+    fclose(concatedFile);
+
+    // Send the entire file to the client using the Packet
+    if (sendto(sockfd, &packet, sizeof(Packet), 0,
+               (struct sockaddr *)&their_addr, addr_len) == -1) {
+        perror("Error sending concatenated file to client");
+    }
+
+    printf("Concatenated file has been sent to the client.\n");
+}
+
+void concatAndSendToClient(int sockfd, struct sockaddr_storage their_addr,
+                           socklen_t addr_len) {
+    concatFiles();
+    sendConcatedFile(sockfd, their_addr, addr_len);
 }
 
 int main(void) {
@@ -233,18 +303,14 @@ int main(void) {
                 file_buffer->buffer[packet.line_index] = packet;
             }
 
-            // // Simulate a lost ACKs (~10% chance) TODO: remove once done
-            // if (rand() % 10 != 0) {
-            //     // Send ACK back to the client
-            //     if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr
-            //     *)&their_addr,
-            //                addr_len) < 0) {
-            //         perror("ACK sending failed");
-            //         exit(1);
-            //     }
+            if (completed_files == MAX_FILES) {
+                printf("All transmissions have been completed!\n");
+                concatAndSendToClient(sockfd, their_addr, addr_len);
+                // CHATGPT: call new function here to concat and resend all the
+                // files
 
-            //     writeBufferToFile(&packet);
-            // }
+                // completed_files = 0;  // reset the server to recieve again
+            }
         }
         printf("\n");
     }
