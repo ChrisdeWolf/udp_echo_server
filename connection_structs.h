@@ -2,8 +2,8 @@
 #define CONNECTION_STRUCTS_H
 
 // CONSTANTS
-// #define MAXBUFLEN 1024
-#define MAXBUFLEN 8192  // TODO: too large?
+#define SERVERPORT "7777"  // the server port for this file exchange process
+#define MAXBUFLEN 8192     // TODO: too large?
 #define MAX_RETRANSMISSIONS 3
 #define MAX_FILES 10
 #define MAX_LINES 100  // max lines a file is allowed to have TODO: do i need?

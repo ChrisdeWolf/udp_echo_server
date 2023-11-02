@@ -19,10 +19,7 @@
 #include "connection_structs.h"
 #include "socket_utils.h"
 
-#define SERVERPORT "7777"  // the port users will be connecting to
-#define MAX_CONNECTIONS 10
-
-Connection connections[MAX_CONNECTIONS];  // TODO: move this into code
+Connection connections[MAX_FILES];  // TODO: move this into code
 // TODO: turn this into bytes, throughout the whole thing
 const int file_sizes[10] = {9, 9, 10, 9, 8, 12, 12, 8, 7, 11};
 char file_names[100][256];
@@ -34,7 +31,7 @@ void cleanupClientFiles() {
 }
 
 int allConnectionsFinished() {
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < MAX_FILES; i++) {
         if (connections[i].finished != 1) {
             return 0;
         }
@@ -43,10 +40,10 @@ int allConnectionsFinished() {
 }
 
 int getRandomFileIndex(Connection connections[]) {
-    int unfinishedFiles[MAX_CONNECTIONS];
+    int unfinishedFiles[MAX_FILES];
     int unfinishedCount = 0;
 
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < MAX_FILES; i++) {
         if (connections[i].finished != 1) {
             unfinishedFiles[unfinishedCount] = i;
             unfinishedCount++;
@@ -62,7 +59,7 @@ int getRandomFileIndex(Connection connections[]) {
 }
 
 Connection *getConnection(int file_index) {
-    if (file_index >= 0 && file_index < MAX_CONNECTIONS) {
+    if (file_index >= 0 && file_index < MAX_FILES) {
         return &connections[file_index];
     } else {
         return NULL;
@@ -234,7 +231,7 @@ int main(int argc, char *argv[]) {
 
     // TODO: do i need this...?
     // mark all connections as un-initialized
-    for (int i = 0; i < MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < MAX_FILES; i++) {
         connections[i].initialized = 0;
     }
 

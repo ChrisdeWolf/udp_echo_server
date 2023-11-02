@@ -18,8 +18,6 @@
 #include "server_socket_utils.h"
 #include "socket_utils.h"
 
-#define MYPORT "7777"  // the port users will be connecting to
-// #define MAXBUFLEN 1024  // TODO: delete
 int completed_files = 0;  // TODO: avoid globals
 char concatedFilePath[256] = "./server_files/concatenated.txt";
 
@@ -193,7 +191,7 @@ int main(void) {
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;  // use my IP
 
-    if ((rv = getaddrinfo(NULL, MYPORT, &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(NULL, SERVERPORT, &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
