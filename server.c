@@ -1,5 +1,5 @@
 /*
-** server.c -- a datagram sockets "server" demo
+** server.c -- a datagram sockets "server"
 */
 
 #include <arpa/inet.h>
