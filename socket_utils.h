@@ -3,9 +3,6 @@
 
 #include "connection_structs.h"
 
-#define MAX_RETRANSMISSIONS 3
-#define TIMEOUT_SEC 1
-
 extern unsigned short getChecksum(const char *data) {
     unsigned int sum = 0;
     int i;
@@ -15,117 +12,24 @@ extern unsigned short getChecksum(const char *data) {
     return (unsigned short)(sum & 0xFFFF);
 }
 
-void sendACK(int sockfd, struct sockaddr_storage their_addr,
-             socklen_t addr_len) {
-    Packet ackPacket;
-    ackPacket.ack = 1;
-    if (sendto(sockfd, &ackPacket, sizeof(Packet), 0,
-               (struct sockaddr *)&their_addr, addr_len) < 0) {
-        perror("ACK sending failed");
-    }
-}
+extern int isDamagedPacket(Packet *packet) {
+    // calculate the checksum for the received packet
+    unsigned short computedChecksum = getChecksum(packet->buffer);
+    printf("packet checksum=%d, server checksum=%d\n", packet->checksum,
+           computedChecksum);
 
-void sendNACK(int sockfd, struct sockaddr_storage their_addr,
-              socklen_t addr_len) {
-    Packet nackPacket;
-    nackPacket.nack = 1;
-    if (sendto(sockfd, &nackPacket, sizeof(Packet), 0,
-               (struct sockaddr *)&their_addr, addr_len) < 0) {
-        perror("NACK sending failed");
-    }
-}
-
-int sendPacket(int sockfd, struct addrinfo *p, Packet *packet) {
-    int numbytes;
-    if ((numbytes = sendto(sockfd, packet, sizeof(Packet), 0, p->ai_addr,
-                           p->ai_addrlen)) == -1) {
-        perror("sendPacket error:");
-        return -1;
-    }
-    printf(
-        "packet->file_size: %d, packet->file_index: %d, packet->line_index: "
-        "%d, line_end_index: %d\n",
-        packet->file_size, packet->file_index, packet->line_index,
-        packet->line_end_index);
-    printf("client sent %d bytes to server\n", numbytes);
-    return numbytes;
-}
-
-int waitForACK(int sockfd, struct addrinfo *p) {
-    fd_set read_fds;
-    struct timeval timeout;
-
-    // setup timeout timer
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = 0;
-    FD_ZERO(&read_fds);
-    FD_SET(sockfd, &read_fds);
-
-    // use of select here for the async timer
-    // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
-    int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
-
-    if (ready < 0) {
-        perror("Select failed");
-        return -1;
-    } else if (ready == 0) {
-        return 0;  // TIMED-OUT!
+    if (computedChecksum != packet->checksum) {
+        printf("Received packet with invalid checksum. Sending NACK.\n");
+        return 1;  // request retransmission
     }
 
-    // check for a returned ACK or NACK
-    Packet receivedPacket;
-    socklen_t addr_len = sizeof(p);
-    ssize_t ack_length = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
-                                  (struct sockaddr *)&p, &addr_len);
-
-    if (ack_length < 0) {
-        perror("ACK receive error");
-        return -1;
+    if (packet->file_index < 0 || packet->file_index >= MAX_FILES ||
+        packet->line_index < 0) {
+        printf("Invalid/out-of-range packet. Sending NACK.\n");
+        return 1;  // request retransmission
     }
 
-    if (receivedPacket.ack == 1) {
-        return 1;  // ACK received
-    } else if (receivedPacket.nack == 1) {
-        return 0;  // NACK received
-    } else {
-        printf("Received an unknown response\n");
-        printf("%s\n", receivedPacket.buffer);
-        return -1;
-    }
-}
-
-extern int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
-    int retransmissions = 0;
-
-    while (retransmissions <= MAX_RETRANSMISSIONS) {
-        int result = sendPacket(sockfd, p, packet);
-        if (result == -1) {
-            // Error
-            printf("Error occurred while sending the packet.\n");
-            return -1;
-        } else {
-            // Wait for ACK/NACK
-            int ackResult = waitForACK(sockfd, p);
-            if (ackResult == 0) {
-                printf("Timeout or NACK! Retransmitting...\n");
-                retransmissions++;
-            } else if (ackResult == -1) {
-                // TODO: handle errors?
-                printf("Error!\n");
-                return -1;
-            } else {
-                printf("ACK received!\n");
-                break;
-            }
-        }
-    }
-
-    if (retransmissions > MAX_RETRANSMISSIONS) {
-        printf("Max retransmissions reached for the packet. Aborting.\n");
-        return 0;  // Max retransmissions reached
-    }
-
-    return 1;  // Packet sent and ACK received
+    return 0;  // no retransmission required
 }
 
 #endif

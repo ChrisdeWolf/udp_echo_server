@@ -15,11 +15,11 @@
 #include <unistd.h>
 
 #include "connection_structs.h"
+#include "server_socket_utils.h"
 #include "socket_utils.h"
 
 #define MYPORT "7777"  // the port users will be connecting to
 // #define MAXBUFLEN 1024  // TODO: delete
-#define MAX_FILES 10
 int completed_files = 0;  // TODO: avoid globals
 char concatedFilePath[256] = "./server_files/concatenated.txt";
 
@@ -95,26 +95,6 @@ void writeBufferToFile(Packet *packet) {
     fclose(file);
 }
 
-int isDamagedData(Packet *packet) {
-    // calculate the checksum for the received packet
-    unsigned short serverChecksum = getChecksum(packet->buffer);
-    printf("packet checksum=%d, server checksum=%d\n", packet->checksum,
-           serverChecksum);
-
-    if (serverChecksum != packet->checksum) {
-        printf("Received packet with invalid checksum. Sending NACK.\n");
-        return 1;  // request retransmission
-    }
-
-    if (packet->file_index < 0 || packet->file_index >= MAX_FILES ||
-        packet->line_index < 0) {
-        printf("Invalid/out-of-range packet. Sending NACK.\n");
-        return 1;  // request retransmission
-    }
-
-    return 0;  // no retransmission required
-}
-
 void concatFiles() {
     FILE *concatedFile = fopen(concatedFilePath, "w");
     if (concatedFile == NULL) {
@@ -162,18 +142,29 @@ void sendConcatedFile(int sockfd, struct sockaddr_storage their_addr,
 
     fclose(concatedFile);
 
-    // Send the entire file to the client in a Packet
-    // sendAndWaitForACK(sockfd, p, packet);
-    if (sendto(sockfd, &packet, sizeof(Packet), 0,
-               (struct sockaddr *)&their_addr, addr_len) == -1) {
-        perror("Error sending concatenated file to client");
+    int retransmissions = 0;
+
+    while (retransmissions <= MAX_RETRANSMISSIONS) {
+        if (sendto(sockfd, &packet, sizeof(Packet), 0,
+                   (struct sockaddr *)&their_addr, addr_len) == -1) {
+            perror("Error sending packet to client");
+            break;
+        }
+
+        // wait for ACK/NACK
+        int ackResult =
+            waitForACK(sockfd, (struct sockaddr *)&their_addr, addr_len);
+        if (ackResult == 0) {
+            printf("Timeout or NACK! Retransmitting...\n");
+            retransmissions++;
+        } else if (ackResult == -1) {
+            printf("Error!\n");
+            break;
+        } else {
+            printf("ACK received!\n");
+            break;
+        }
     }
-
-    // struct addrinfo *p;
-    // int sendResult =
-    //     sendAndWaitForACK(sockfd, (struct addrinfo *)&their_addr, &packet);
-
-    printf("Concatenated file has been sent to the client.\n");
 }
 
 void concatAndSendToClient(int sockfd, struct sockaddr_storage their_addr,
@@ -253,15 +244,15 @@ int main(void) {
             packet.line_end_index, packet.buffer);
 
         // Check for damaged data and ask for re-tx if needed
-        if (isDamagedData(&packet)) {
-            sendNACK(sockfd, their_addr, addr_len);
+        if (isDamagedPacket(&packet)) {
+            sendClientNACK(sockfd, their_addr, addr_len);
             continue;  // go back to listening
         }
 
         // Simulate a lost ACKs (~10% chance) TODO: remove once done
         if (rand() % 10 != 0) {
             // Send ACK back to the client
-            sendACK(sockfd, their_addr, addr_len);
+            sendClientACK(sockfd, their_addr, addr_len);
 
             FileBuffer *file_buffer = &file_buffers[packet.file_index];
 
@@ -307,12 +298,15 @@ int main(void) {
                 printf("All transmissions have been completed!\n");
                 concatAndSendToClient(sockfd, their_addr, addr_len);
 
-                // completed_files = 0;  // reset the server to recieve again
+                break;
+                // reset the server to receive again
+                // completed_files =
+                //     0;  // TODO: this doesn't seem to work on second try
+                // clearServerFiles();
             }
         }
         printf("\n");
     }
     close(sockfd);
-
     return 0;
 }

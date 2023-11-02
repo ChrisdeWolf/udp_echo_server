@@ -15,6 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "client_socket_utils.h"
 #include "connection_structs.h"
 #include "socket_utils.h"
 
@@ -123,11 +124,11 @@ void generatePayload(Connection *connection, Packet *packet) {
     connection->line_index = new_offset + 1;
 }
 
-void receiveWithTimeout(int sockfd, struct addrinfo *p) {
+int receiveWithTimeout(int sockfd, struct addrinfo *p) {
     fd_set read_fds;
     struct timeval timeout;
 
-    // setup timeout timer
+    // setup timeout timer, longer timeout to give server some time
     timeout.tv_sec = TIMEOUT_SEC * 10;
     timeout.tv_usec = 0;
     FD_ZERO(&read_fds);
@@ -139,9 +140,9 @@ void receiveWithTimeout(int sockfd, struct addrinfo *p) {
 
     if (ready < 0) {
         perror("Select failed");
-        return;
+        return -1;
     } else if (ready == 0) {
-        return;  // TIMED-OUT!
+        return -1;  // TIMED-OUT!
     }
 
     Packet receivedPacket;
@@ -151,18 +152,20 @@ void receiveWithTimeout(int sockfd, struct addrinfo *p) {
 
     if (data_len < 0) {
         perror("receive error");
-        return;
+        return -1;
     }
 
     printf("Received a packet from the server.\n");
-    printf("Packet Buffer: %s\n", receivedPacket.buffer);
+    // printf("Packet Buffer: %s\n", receivedPacket.buffer);
 
-    // TODO:
-    // - check if data is damaged
-    //  - send NACK (shared util function)
-    // - else
-    //  - send ACK (shared util function)
-    //
+    // Check for damaged data and ask for re-tx if needed
+    if (isDamagedPacket(&receivedPacket)) {
+        printf("damaged!\n");
+        // sendServerNACK(sockfd, p);
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -233,12 +236,21 @@ int main(int argc, char *argv[]) {
         printf("\n");
     }
 
-    receiveWithTimeout(sockfd, p);
-    // Packet receivedPacket;
-    // waitForACK(sockfd, p, &receivedPacket);
-    // printf("Received a packet from the server.\n");
-    // printf("Packet Buffer: %s\n", receivedPacket.buffer);
-
+    int retransmissions = 0;
+    while (retransmissions < MAX_RETRANSMISSIONS) {
+        int result = receiveWithTimeout(sockfd, p);
+        if (result == 1) {
+            printf("sending an ACK!!\n");
+            sendServerACK(sockfd, p);
+            break;
+        } else if (result == 0) {
+            printf("sending a NACK!!\n");
+            sendServerNACK(sockfd, p);
+            retransmissions++;
+        } else {
+            break;
+        }
+    }
     freeaddrinfo(servinfo);
     close(sockfd);
 

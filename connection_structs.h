@@ -1,8 +1,13 @@
 #ifndef CONNECTION_STRUCTS_H
 #define CONNECTION_STRUCTS_H
 
+// CONSTANTS
 // #define MAXBUFLEN 1024
 #define MAXBUFLEN 8192  // TODO: too large?
+#define MAX_RETRANSMISSIONS 3
+#define MAX_FILES 10
+#define MAX_LINES 100  // max lines a file is allowed to have TODO: do i need?
+#define TIMEOUT_SEC 1
 
 typedef struct {
     int file_size;            // total lines in the file
@@ -24,7 +29,6 @@ typedef struct {
     int line_index;   // current line index 0-file_size-1
 } Connection;
 
-#define MAX_LINES 100  // max lines a file is allowed to have TODO: do i need?
 // File buffer structure for out-of-order packets
 typedef struct {
     Packet buffer[MAX_LINES];
