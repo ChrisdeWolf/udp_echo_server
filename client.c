@@ -16,11 +16,10 @@
 #include <unistd.h>
 
 #include "connection_structs.h"
+#include "socket_utils.h"
 
 #define SERVERPORT "7777"  // the port users will be connecting to
 #define MAX_CONNECTIONS 10
-#define TIMEOUT_SEC 1
-#define MAX_RETRANSMISSIONS 3
 
 Connection connections[MAX_CONNECTIONS];  // TODO: move this into code
 // TODO: turn this into bytes, throughout the whole thing
@@ -102,6 +101,8 @@ void generatePayload(Connection *connection, Packet *packet) {
     packet->file_size = connection->file_size;
     packet->file_index = connection->file_index;
     packet->line_index = connection->line_index;
+    packet->ack = 0;
+    packet->nack = 0;
 
     char file_path[256];
     snprintf(file_path, sizeof(file_path), "./client_files/quote%d.txt",
@@ -122,67 +123,12 @@ void generatePayload(Connection *connection, Packet *packet) {
     connection->line_index = new_offset + 1;
 }
 
-int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
-    int numbytes;
-    fd_set read_fds;
-    struct timeval timeout;
-
-    if ((numbytes = sendto(sockfd, packet, sizeof(Packet), 0, p->ai_addr,
-                           p->ai_addrlen)) == -1) {
-        perror("client: sendto");
-        return -1;
-    }
-    printf(
-        "packet->file_size: %d, packet->file_index: %d, packet->line_index: "
-        "%d, line_end_index: %d\n",
-        packet->file_size, packet->file_index, packet->line_index,
-        packet->line_end_index);
-    printf("client sent %d bytes to server\n", numbytes);
-
-    // setup timeout timer
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = 0;
-    FD_ZERO(&read_fds);
-    FD_SET(sockfd, &read_fds);
-
-    // use of select here for the async timer
-    // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
-    int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
-
-    if (ready < 0) {
-        perror("Select failed");
-        return -1;
-    } else if (ready == 0) {
-        return 0;
-    }
-
-    // Check for a returned ACK or NACK
-    char ack[3];
-    socklen_t addr_len = sizeof(p);
-    ssize_t ack_length =
-        recvfrom(sockfd, ack, sizeof(ack), 0, (struct sockaddr *)&p, &addr_len);
-
-    if (ack_length < 0) {
-        perror("ACK receive error");
-        return -1;
-    }
-
-    ack[ack_length] = '\0';  // null-terminate the buffer
-    if (strcmp(ack, "ACK") == 0) {
-        return 1;
-    } else if (strcmp(ack, "NCK") == 0) {
-        return 0;
-    } else {
-        printf("Received an unknown response: %s\n", ack);
-        return -1;
-    }
-}
-
 void receiveWithTimeout(int sockfd, struct addrinfo *p) {
     fd_set read_fds;
     struct timeval timeout;
 
-    timeout.tv_sec = TIMEOUT_SEC;
+    // setup timeout timer
+    timeout.tv_sec = TIMEOUT_SEC * 10;
     timeout.tv_usec = 0;
     FD_ZERO(&read_fds);
     FD_SET(sockfd, &read_fds);
@@ -193,26 +139,30 @@ void receiveWithTimeout(int sockfd, struct addrinfo *p) {
 
     if (ready < 0) {
         perror("Select failed");
-        // return -1;
+        return;
     } else if (ready == 0) {
-        printf("timeout! need to just cancel the client if this happens\n");
-        // return 0;
-    } else {
+        return;  // TIMED-OUT!
     }
 
-    // Check for a returned ACK or NACK
     Packet receivedPacket;
     socklen_t addr_len = sizeof(p);
-    ssize_t resp_len = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
+    ssize_t data_len = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
                                 (struct sockaddr *)&p, &addr_len);
 
-    if (resp_len < 0) {
-        perror("ACK receive error");
-        // return -1;
+    if (data_len < 0) {
+        perror("receive error");
+        return;
     }
 
     printf("Received a packet from the server.\n");
     printf("Packet Buffer: %s\n", receivedPacket.buffer);
+
+    // TODO:
+    // - check if data is damaged
+    //  - send NACK (shared util function)
+    // - else
+    //  - send ACK (shared util function)
+    //
 }
 
 int main(int argc, char *argv[]) {
@@ -265,8 +215,6 @@ int main(int argc, char *argv[]) {
         if (randomFileIndex == -1) break;
 
         Connection *connection = getConnection(randomFileIndex);
-        // TODO: should skip this loop if the file has already completed
-        //		... so check for connection->finished == 1
         if (connection->initialized == 0) {
             printf("Creating a new connection for file_index %d\n",
                    randomFileIndex);
@@ -278,35 +226,18 @@ int main(int argc, char *argv[]) {
         }
 
         generatePayload(connection, packet);
-
-        int retransmissions = 0;
-
-        while (retransmissions <= MAX_RETRANSMISSIONS) {
-            int result = sendAndWaitForACK(sockfd, p, packet);
-            if (result == 0) {
-                printf("timeout or NACK! re-transmitting...\n");
-                retransmissions++;
-            } else if (result == -1) {
-                // TODO: handle?
-                printf("error!\n");
-                break;
-            } else {
-                printf("ACK received!\n");
-                break;
-            }
-        }
-        if (retransmissions > MAX_RETRANSMISSIONS) {
-            printf("Max retransmissions reached for packet. Aborting.\n");
-            break;
-        }
+        sendAndWaitForACK(sockfd, p, packet);
 
         clearPacketBuffer(packet);  // Clear the buffer
         free(packet);               // Free allocated memory
         printf("\n");
     }
 
-    // CHATGPT: function call here
     receiveWithTimeout(sockfd, p);
+    // Packet receivedPacket;
+    // waitForACK(sockfd, p, &receivedPacket);
+    // printf("Received a packet from the server.\n");
+    // printf("Packet Buffer: %s\n", receivedPacket.buffer);
 
     freeaddrinfo(servinfo);
     close(sockfd);

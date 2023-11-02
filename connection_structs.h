@@ -3,6 +3,7 @@
 
 // #define MAXBUFLEN 1024
 #define MAXBUFLEN 8192  // TODO: too large?
+
 typedef struct {
     int file_size;            // total lines in the file
     int file_index;           // file index 0-9 (effectively the filename)
@@ -10,6 +11,8 @@ typedef struct {
     int line_end_index;       // index of last line sent:
                               //   line_end_index+1 = next_expected_line_index
     unsigned short checksum;  // checksum for identifying errors
+    int ack;                  // acknowledgement, 1=data received
+    int nack;                 // not-acknowledged, 1=data received but damaged
     char buffer[MAXBUFLEN];   // data for that line
 } Packet;
 
@@ -27,14 +30,5 @@ typedef struct {
     Packet buffer[MAX_LINES];
     int next_expected_line_index;
 } FileBuffer;
-
-unsigned short getChecksum(const char* data) {
-    unsigned int sum = 0;
-    int i;
-    for (i = 0; i < MAXBUFLEN; i++) {
-        sum += (unsigned char)data[i];
-    }
-    return (unsigned short)(sum & 0xFFFF);
-}
 
 #endif

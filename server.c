@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "connection_structs.h"
+#include "socket_utils.h"
 
 #define MYPORT "7777"  // the port users will be connecting to
 // #define MAXBUFLEN 1024  // TODO: delete
@@ -161,11 +162,16 @@ void sendConcatedFile(int sockfd, struct sockaddr_storage their_addr,
 
     fclose(concatedFile);
 
-    // Send the entire file to the client using the Packet
+    // Send the entire file to the client in a Packet
+    // sendAndWaitForACK(sockfd, p, packet);
     if (sendto(sockfd, &packet, sizeof(Packet), 0,
                (struct sockaddr *)&their_addr, addr_len) == -1) {
         perror("Error sending concatenated file to client");
     }
+
+    // struct addrinfo *p;
+    // int sendResult =
+    //     sendAndWaitForACK(sockfd, (struct addrinfo *)&their_addr, &packet);
 
     printf("Concatenated file has been sent to the client.\n");
 }
@@ -248,20 +254,14 @@ int main(void) {
 
         // Check for damaged data and ask for re-tx if needed
         if (isDamagedData(&packet)) {
-            if (sendto(sockfd, "NCK", 3, 0, (struct sockaddr *)&their_addr,
-                       addr_len) < 0) {
-                perror("NACK sending failed");
-            };
+            sendNACK(sockfd, their_addr, addr_len);
             continue;  // go back to listening
         }
 
         // Simulate a lost ACKs (~10% chance) TODO: remove once done
         if (rand() % 10 != 0) {
             // Send ACK back to the client
-            if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&their_addr,
-                       addr_len) < 0) {
-                perror("ACK sending failed");
-            }
+            sendACK(sockfd, their_addr, addr_len);
 
             FileBuffer *file_buffer = &file_buffers[packet.file_index];
 
@@ -306,8 +306,6 @@ int main(void) {
             if (completed_files == MAX_FILES) {
                 printf("All transmissions have been completed!\n");
                 concatAndSendToClient(sockfd, their_addr, addr_len);
-                // CHATGPT: call new function here to concat and resend all the
-                // files
 
                 // completed_files = 0;  // reset the server to recieve again
             }
