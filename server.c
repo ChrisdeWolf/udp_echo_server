@@ -1,6 +1,8 @@
 /*
-** server.c -- a datagram sockets "server"
-*/
+ *  Author: Christopher deWolf
+ *  server.c -- a datagram sockets "server"
+ *      Adapted from "Beej's Guide to Network Programming" (C) 2017
+ */
 
 #include <arpa/inet.h>
 #include <dirent.h>
@@ -151,7 +153,7 @@ void sendConcatedFile(int sockfd, struct sockaddr_storage their_addr,
 
         // wait for ACK/NACK
         int ackResult =
-            waitForACK(sockfd, (struct sockaddr *)&their_addr, addr_len);
+            serverWaitForACK(sockfd, (struct sockaddr *)&their_addr, addr_len);
         if (ackResult == 0) {
             printf("Timeout or NACK! Retransmitting...\n");
             retransmissions++;

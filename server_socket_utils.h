@@ -1,3 +1,8 @@
+/*
+ *   Author: Christopher deWolf
+ *   server_socket_utils.h -- utility functions used by server
+ */
+
 #ifndef SERVER_SOCKET_UTILS_H
 #define SERVER_SOCKET_UTILS_H
 
@@ -23,7 +28,8 @@ extern void sendClientNACK(int sockfd, struct sockaddr_storage their_addr,
     }
 }
 
-int waitForACK(int sockfd, struct sockaddr *their_addr, socklen_t addr_len) {
+int serverWaitForACK(int sockfd, struct sockaddr *their_addr,
+                     socklen_t addr_len) {
     fd_set read_fds;
     struct timeval timeout;
 

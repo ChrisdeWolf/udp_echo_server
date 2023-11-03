@@ -1,6 +1,8 @@
 /*
-** client.c -- a datagram "client"
-*/
+ *   Author: Christopher deWolf
+ *   client.c -- a datagram "client"
+ *      Adapted from "Beej's Guide to Network Programming" (C) 2017
+ */
 
 #include <arpa/inet.h>
 #include <dirent.h>

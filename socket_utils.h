@@ -1,3 +1,8 @@
+/*
+ *   Author: Christopher deWolf
+ *   socket_utils.h -- shared utility functions used by both clients/server
+ */
+
 #ifndef SOCKET_UTILS_H
 #define SOCKET_UTILS_H
 

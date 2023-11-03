@@ -1,14 +1,21 @@
+/*
+ *   Author: Christopher deWolf
+ *   connection_structs.h -- shared constants and data structures used by
+ *   clients/server
+ */
+
 #ifndef CONNECTION_STRUCTS_H
 #define CONNECTION_STRUCTS_H
 
 // CONSTANTS
-#define SERVERPORT "7777"  // the server port for this file exchange process
-#define MAXBUFLEN 8192     // TODO: too large?
-#define MAX_RETRANSMISSIONS 3
-#define MAX_FILES 10
+#define SERVERPORT "7777"      // the server port for this file exchange process
+#define MAXBUFLEN 8192         // TODO: too large?
+#define MAX_RETRANSMISSIONS 3  // max retransmission attempts
+#define MAX_FILES 10           // max # of files in an exchange
 #define MAX_LINES 100  // max lines a file is allowed to have TODO: do i need?
-#define TIMEOUT_SEC 1
+#define TIMEOUT_SEC 1  // timeout (seconds) to wait until retransmission
 
+// DATA STRUCTURES
 typedef struct {
     int file_size;            // total lines in the file
     int file_index;           // file index 0-9 (effectively the filename)
@@ -18,7 +25,7 @@ typedef struct {
     unsigned short checksum;  // checksum for identifying errors
     int ack;                  // acknowledgement, 1=data received
     int nack;                 // not-acknowledged, 1=data received but damaged
-    char buffer[MAXBUFLEN];   // data for that line
+    char buffer[MAXBUFLEN];   // data
 } Packet;
 
 typedef struct {
@@ -29,10 +36,10 @@ typedef struct {
     int line_index;   // current line index 0-file_size-1
 } Connection;
 
-// File buffer structure for out-of-order packets
+// File buffer structure used by server to store out-of-order packets
 typedef struct {
-    Packet buffer[MAX_LINES];
-    int next_expected_line_index;
+    Packet buffer[MAX_LINES];      // buffer of packets, indexed by line_index
+    int next_expected_line_index;  // index of next packet to be used by server
 } FileBuffer;
 
 #endif

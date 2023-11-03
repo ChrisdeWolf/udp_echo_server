@@ -1,3 +1,8 @@
+/*
+ *   Author: Christopher deWolf
+ *   client_socket_utils.h -- utility functions used by clients
+ */
+
 #ifndef CLIENT_SOCKET_UTILS_H
 #define CLIENT_SOCKET_UTILS_H
 
