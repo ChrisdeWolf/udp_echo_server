@@ -8,6 +8,9 @@
 
 #include "connection_structs.h"
 
+/*
+ * getChecksum - computes a rudimentary checksum on the data
+ */
 extern unsigned short getChecksum(const char *data) {
     unsigned int sum = 0;
     int i;
@@ -17,8 +20,13 @@ extern unsigned short getChecksum(const char *data) {
     return (unsigned short)(sum & 0xFFFF);
 }
 
+/*
+ * isDamagedPacket - detects if Packet data is damaged by running a checksum and
+ * comparing it to the Packet.checksum.
+ * returns 1 - damaged packet
+ * returns 0 - undamaged packet
+ */
 extern int isDamagedPacket(Packet *packet) {
-    // calculate the checksum for the received packet
     unsigned short computedChecksum = getChecksum(packet->buffer);
     printf("packet checksum=%d, server checksum=%d\n", packet->checksum,
            computedChecksum);

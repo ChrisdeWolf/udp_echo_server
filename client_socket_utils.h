@@ -8,6 +8,10 @@
 
 #include "connection_structs.h"
 
+/* sendPacket - uses sendTo to send data via socket connection
+ *  returns -1 - failure
+ *  returns positive int - success
+ */
 int sendPacket(int sockfd, struct addrinfo *p, Packet *packet) {
     int numbytes;
     if ((numbytes = sendto(sockfd, packet, sizeof(Packet), 0, p->ai_addr,
@@ -20,10 +24,15 @@ int sendPacket(int sockfd, struct addrinfo *p, Packet *packet) {
         "%d, line_end_index: %d\n",
         packet->file_size, packet->file_index, packet->line_index,
         packet->line_end_index);
-    printf("client sent %d bytes to server\n", numbytes);
     return numbytes;
 }
 
+/*
+ *  waitForACK - listens on a timeout for an ACK/NACK from the server
+ *  returns -1 - failure
+ *  returns  0 - timeout or NACK
+ *  returns  1 - ACK
+ */
 int waitForACK(int sockfd, struct addrinfo *p) {
     fd_set read_fds;
     struct timeval timeout;
@@ -37,7 +46,6 @@ int waitForACK(int sockfd, struct addrinfo *p) {
     // use of select here for the async timer
     // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
     int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
-
     if (ready < 0) {
         perror("Select failed");
         return -1;
@@ -50,7 +58,6 @@ int waitForACK(int sockfd, struct addrinfo *p) {
     socklen_t addr_len = sizeof(p);
     ssize_t ack_length = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
                                   (struct sockaddr *)&p, &addr_len);
-
     if (ack_length < 0) {
         perror("ACK receive error");
         return -1;
@@ -67,13 +74,13 @@ int waitForACK(int sockfd, struct addrinfo *p) {
     }
 }
 
+/* sendAndWaitForACK - sends a Packet, handling retransmissions if required */
 extern int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
     int retransmissions = 0;
 
     while (retransmissions <= MAX_RETRANSMISSIONS) {
         int result = sendPacket(sockfd, p, packet);
         if (result == -1) {
-            // Error
             printf("Error occurred while sending the packet.\n");
             return -1;
         } else {
@@ -83,8 +90,7 @@ extern int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
                 printf("Timeout or NACK! Retransmitting...\n");
                 retransmissions++;
             } else if (ackResult == -1) {
-                // TODO: handle errors?
-                printf("Error!\n");
+                printf("Error waiting for ACK/NACK!\n");
                 return -1;
             } else {
                 printf("ACK received!\n");
@@ -95,12 +101,13 @@ extern int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
 
     if (retransmissions > MAX_RETRANSMISSIONS) {
         printf("Max retransmissions reached for the packet. Aborting.\n");
-        return 0;  // Max retransmissions reached
+        return 0;
     }
 
     return 1;  // Packet sent and ACK received
 }
 
+/* sendServerACK - send an acknowledgement (ACK) to the server */
 extern void sendServerACK(int sockfd, struct addrinfo *p) {
     Packet ackPacket;
     ackPacket.ack = 1;
@@ -109,6 +116,7 @@ extern void sendServerACK(int sockfd, struct addrinfo *p) {
     }
 }
 
+/* sendServerNACK - send a negative-acknowledgement (NACK) to the server */
 extern void sendServerNACK(int sockfd, struct addrinfo *p) {
     Packet nackPacket;
     nackPacket.nack = 1;

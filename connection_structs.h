@@ -24,7 +24,7 @@ typedef struct {
                               //   line_end_index+1 = next_expected_line_index
     unsigned short checksum;  // checksum for identifying errors
     int ack;                  // acknowledgement, 1=data received
-    int nack;                 // not-acknowledged, 1=data received but damaged
+    int nack;                 // negative-acknowledgment, 1=data damaged
     char buffer[MAXBUFLEN];   // data
 } Packet;
 

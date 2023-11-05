@@ -1,6 +1,9 @@
 /*
  *   Author: Christopher deWolf
  *   client.c -- a datagram "client"
+ *      Randomly sends data for 10 files to a specified IP address.
+ *      Handles retransmissions and waits to receive server response
+ *      after all files have been transmitted.
  *      Adapted from "Beej's Guide to Network Programming" (C) 2017
  */
 
@@ -22,16 +25,20 @@
 #include "socket_utils.h"
 
 Connection connections[MAX_FILES];  // TODO: move this into code
-// TODO: turn this into bytes, throughout the whole thing
 const int file_sizes[10] = {9, 9, 10, 9, 8, 12, 12, 8, 7, 11};
 char file_names[100][256];
 
+/* cleanupClientFiles - cleanup concatendated.txt file */
 void cleanupClientFiles() {
     if (remove("./client_files/concatenated.txt") != 0) {
         perror("File deletion error");
     }
 }
 
+/* allConnectionsFinished - check if all file transmissions have completed
+    returns 1 - all file transmissions are complete
+    returns 0 - there are still unfinished transmissions
+*/
 int allConnectionsFinished() {
     for (int i = 0; i < MAX_FILES; i++) {
         if (connections[i].finished != 1) {
@@ -41,6 +48,10 @@ int allConnectionsFinished() {
     return 1;
 }
 
+/*
+ * getRandomFileIndex - returns a random file index from the remaining files
+ * that have not finished transmission
+ */
 int getRandomFileIndex(Connection connections[]) {
     int unfinishedFiles[MAX_FILES];
     int unfinishedCount = 0;
@@ -53,13 +64,16 @@ int getRandomFileIndex(Connection connections[]) {
     }
 
     if (unfinishedCount == 0) {
-        return -1;
+        return -1;  // all files have finished transmitting
     }
 
     int randomIndex = rand() % unfinishedCount;
     return unfinishedFiles[randomIndex];
 }
 
+/*
+ * getConnection - returns a connection by file_index
+ */
 Connection *getConnection(int file_index) {
     if (file_index >= 0 && file_index < MAX_FILES) {
         return &connections[file_index];
@@ -68,6 +82,9 @@ Connection *getConnection(int file_index) {
     }
 }
 
+/*
+ * initConnection - initializes a new connection at the index provided
+ */
 void initConnection(int file_index) {
     Connection *conn = &connections[file_index];
     conn->finished = 0;
@@ -81,21 +98,24 @@ void clearPacketBuffer(Packet *packet) {
     memset(packet->buffer, 0, sizeof(packet->buffer));
 }
 
+/*
+ * copyLineToPacket - copies the next un-transmitted line from a file to a data
+ * Packet. This will copy a random number of lines from 1-3 (inclusive).
+ */
 int copyLineToPacket(FILE *file, Packet *packet, int current_index) {
     char line[MAXBUFLEN];
     int i = 0;
 
-    int line_offset = (rand() % 3);
+    int line_offset = (rand() % 3);  // copy over 1-3 lines
 
     while (fgets(line, sizeof(line), file) != NULL) {
-        // TODO: should only process lines < file_size
         if (i >= current_index && i <= (current_index + line_offset)) {
             // Ensure the line can fit within packet->buffer
             if (strlen(line) < sizeof(packet->buffer)) {
                 strcat(packet->buffer, line);
             } else {
-                printf("Line too long for buffer.\n");
-                return 0;  // Line too long for the buffer
+                perror("Line too long for buffer.\n");
+                return 0;
             }
         }
         i++;
@@ -103,6 +123,9 @@ int copyLineToPacket(FILE *file, Packet *packet, int current_index) {
     return current_index + line_offset;
 }
 
+/*
+ * generatePayload - populates the Packet structure with metadata and data
+ */
 void generatePayload(Connection *connection, Packet *packet) {
     packet->file_size = connection->file_size;
     packet->file_index = connection->file_index;
@@ -110,25 +133,27 @@ void generatePayload(Connection *connection, Packet *packet) {
     packet->ack = 0;
     packet->nack = 0;
 
+    /* copy line data from the file to the packet */
     char file_path[256];
     snprintf(file_path, sizeof(file_path), "./client_files/quote%d.txt",
              packet->file_index);
     FILE *file = fopen(file_path, "r");
-
     int new_offset = copyLineToPacket(file, packet, connection->line_index);
-    // TODO: error handle... if(copyLineToPacket())...
     fclose(file);
 
-    // so the server can track what line_index to expect next
+    // for server to track what line_index to expect next
     packet->line_end_index = new_offset;
+    // compute checksum
     packet->checksum = getChecksum(packet->buffer);
 
+    // detect if finished and set the connection to finished
     if (packet->line_end_index >= connection->file_size - 1)
         connection->finished = 1;
-
+    // update the current transmission line_index for the file
     connection->line_index = new_offset + 1;
 }
 
+/* writeBufferToFile - writes a char buffer to concatenated.txt */
 void writeBufferToFile(char *buffer) {
     FILE *file = fopen("./client_files/concatenated.txt", "a");
     if (file == NULL) {
@@ -148,6 +173,12 @@ void writeBufferToFile(char *buffer) {
     return;
 }
 
+/*
+ * receiveWithTimeout - listens on a timeout for a Packet from the server
+ *  returns -1 - failure or timeout
+ *  returns  0 - damaged data, should send NACK
+ *  returns  1 - data received, should send ACK
+ */
 int receiveWithTimeout(int sockfd, struct addrinfo *p) {
     fd_set read_fds;
     struct timeval timeout;
@@ -161,7 +192,6 @@ int receiveWithTimeout(int sockfd, struct addrinfo *p) {
     // use of select here for the async timer
     // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
     int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
-
     if (ready < 0) {
         perror("Select failed");
         return -1;
@@ -169,18 +199,15 @@ int receiveWithTimeout(int sockfd, struct addrinfo *p) {
         return -1;  // TIMED-OUT!
     }
 
+    // listen for incoming packets fromt the server
     Packet receivedPacket;
     socklen_t addr_len = sizeof(p);
     ssize_t data_len = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
                                 (struct sockaddr *)&p, &addr_len);
-
     if (data_len < 0) {
         perror("receive error");
         return -1;
     }
-
-    printf("Received a packet from the server.\n");
-    // printf("Packet Buffer: %s\n", receivedPacket.buffer);
 
     // Check for damaged data and ask for re-tx if needed
     if (isDamagedPacket(&receivedPacket)) {
@@ -196,16 +223,21 @@ int main(int argc, char *argv[]) {
     struct addrinfo hints, *servinfo, *p;
     int rv;
 
-    // client initialization
+    /* client initialization */
     cleanupClientFiles();
     srand(time(NULL));
+    // explicitly set all connections as un-initialized
+    for (int i = 0; i < MAX_FILES; i++) {
+        connections[i].initialized = 0;
+    }
 
-    // TODO: for custom args if i want to add them
+    /* check arguments */
     if (argc != 2) {
-        fprintf(stderr, "usage: client hostname\n");
+        fprintf(stderr, "usage: ./client SERVER_IP\n");
         exit(1);
     }
 
+    /* socket configuration */
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET6;  // set to AF_INET to use IPv4
     hints.ai_socktype = SOCK_DGRAM;
@@ -231,17 +263,14 @@ int main(int argc, char *argv[]) {
         return 2;
     }
 
-    // TODO: do i need this...?
-    // mark all connections as un-initialized
-    for (int i = 0; i < MAX_FILES; i++) {
-        connections[i].initialized = 0;
-    }
-
+    /* main client transmission loop */
     while (allConnectionsFinished() != 1) {
         Packet *packet = malloc(sizeof(Packet));
+
         int randomFileIndex = getRandomFileIndex(connections);
         if (randomFileIndex == -1) break;
 
+        /* get the current connection or establish a new one */
         Connection *connection = getConnection(randomFileIndex);
         if (connection->initialized == 0) {
             printf("Creating a new connection for file_index %d\n",
@@ -253,29 +282,34 @@ int main(int argc, char *argv[]) {
                    randomFileIndex);
         }
 
+        /* generate and send data */
         generatePayload(connection, packet);
         sendAndWaitForACK(sockfd, p, packet);
 
-        clearPacketBuffer(packet);  // Clear the buffer
-        free(packet);               // Free allocated memory
+        /* cleanup */
+        clearPacketBuffer(packet);
+        free(packet);
         printf("\n");
     }
 
+    /* receive concatenated files from server */
     int retransmissions = 0;
     while (retransmissions < MAX_RETRANSMISSIONS) {
         int result = receiveWithTimeout(sockfd, p);
         if (result == 1) {
-            printf("sending an ACK!!\n");
+            printf("client: sending a ACK\n");
             sendServerACK(sockfd, p);
             break;
         } else if (result == 0) {
-            printf("sending a NACK!!\n");
+            printf("client: sending a NACK\n");
             sendServerNACK(sockfd, p);
             retransmissions++;
         } else {
             break;
         }
     }
+
+    /* cleanup */
     freeaddrinfo(servinfo);
     close(sockfd);
 

@@ -8,6 +8,7 @@
 
 #include "connection_structs.h"
 
+/* sendClientACK - send an acknowledgement (ACK) to the client */
 extern void sendClientACK(int sockfd, struct sockaddr_storage their_addr,
                           socklen_t addr_len) {
     Packet ackPacket;
@@ -18,6 +19,7 @@ extern void sendClientACK(int sockfd, struct sockaddr_storage their_addr,
     }
 }
 
+/* sendClientNACK - send a negative-acknowledgement (NACK) to the client */
 extern void sendClientNACK(int sockfd, struct sockaddr_storage their_addr,
                            socklen_t addr_len) {
     Packet nackPacket;
@@ -28,6 +30,7 @@ extern void sendClientNACK(int sockfd, struct sockaddr_storage their_addr,
     }
 }
 
+/* serverWaitForACK - use a timeout to listen for ACKs/NACKs */
 int serverWaitForACK(int sockfd, struct sockaddr *their_addr,
                      socklen_t addr_len) {
     fd_set read_fds;
