@@ -190,7 +190,7 @@ void concatAndSendToClient(int sockfd, struct sockaddr_storage their_addr,
     sendConcatedFile(sockfd, their_addr, addr_len);
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
     int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int rv;
@@ -204,6 +204,22 @@ int main(void) {
     /* server initialization */
     clearServerFiles();
     initializeFileBuffers(file_buffers);
+
+    /* handle help and opts */
+    int simulateLostPackets = 0;
+    int simulateDamagedPackets = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            serverPrintUsage();
+            exit(0);
+        } else if (strcmp(argv[i], "--simulate-lost-packets") == 0) {
+            simulateLostPackets = 1;
+        } else if (strcmp(argv[i], "--simulate-damaged-packets") == 0) {
+            simulateDamagedPackets = 1;
+        }
+    }
+    printf("simulateLostPackets: %d, simulateDamagedPackets: %d\n",
+           simulateLostPackets, simulateDamagedPackets);
 
     /* socket configuration */
     memset(&hints, 0, sizeof hints);
@@ -254,66 +270,67 @@ int main(void) {
                          sizeof s));
         printf(
             "Received Packet: file_size: %d, file_index: %d, line_index: %d, "
-            "line_end_index: %d, buffer = %s\n",
+            "line_end_index: %d\n",
             packet.file_size, packet.file_index, packet.line_index,
-            packet.line_end_index, packet.buffer);
+            packet.line_end_index);
 
-        /* Check for damaged data and ask for re-tx if needed */
-        if (isDamagedPacket(&packet)) {
+        /* Check for damaged data (or simulate) and ask for re-tx if needed */
+        if (isDamagedPacket(&packet) ||
+            (simulateLostPackets && (rand() % 10) == 0)) {
+            printf("Damaged Packet, sending NACK...\n");
             sendClientNACK(sockfd, their_addr, addr_len);
             continue;  // go back to listening
         }
 
-        // TODO: turn this into an OPT
-        // Simulate a lost ACKs (~10% chance) TODO: remove once done
-        if (rand() % 10 != 0) {
-            /* Send ACK back to the client */
-            sendClientACK(sockfd, their_addr, addr_len);
+        // simulate a lost ACK with a 10% chance (if flag was set)
+        if (simulateLostPackets && (rand() % 10) == 0) {
+            printf("Simulated lost ACK, skipping...\n");
+            continue;  // Skip this packet
+        }
 
-            // get the received files out-of-order buffer
-            FileBuffer *file_buffer = &file_buffers[packet.file_index];
+        /* Send ACK back to the client */
+        sendClientACK(sockfd, their_addr, addr_len);
 
-            // check if the receieved line index is in expected order
-            if (packet.line_index == file_buffer->next_expected_line_index) {
-                // packet is in order, write it to the file
-                writeBufferToFile(&packet);
+        // get the received files out-of-order buffer
+        FileBuffer *file_buffer = &file_buffers[packet.file_index];
 
-                // increment next expected line index
-                file_buffer->next_expected_line_index =
-                    packet.line_end_index + 1;
+        // check if the receieved line index is in expected order
+        if (packet.line_index == file_buffer->next_expected_line_index) {
+            // packet is in order, write it to the file
+            writeBufferToFile(&packet);
 
-                // see if any subsequent out-of-order packets can now be written
-                while (file_buffer->next_expected_line_index < MAX_LINES) {
-                    Packet *next_packet =
-                        &file_buffer
-                             ->buffer[file_buffer->next_expected_line_index];
-                    if (next_packet->line_index ==
-                        file_buffer->next_expected_line_index) {
-                        // write to file and increment next expected line index
-                        writeBufferToFile(next_packet);
-                        file_buffer->next_expected_line_index =
-                            next_packet->line_end_index + 1;
-                    } else {
-                        break;  // Packet is still out-of-order
-                    }
+            // increment next expected line index
+            file_buffer->next_expected_line_index = packet.line_end_index + 1;
+
+            // see if any subsequent out-of-order packets can now be written
+            while (file_buffer->next_expected_line_index < MAX_LINES) {
+                Packet *next_packet =
+                    &file_buffer->buffer[file_buffer->next_expected_line_index];
+                if (next_packet->line_index ==
+                    file_buffer->next_expected_line_index) {
+                    // write to file and increment next expected line index
+                    writeBufferToFile(next_packet);
+                    file_buffer->next_expected_line_index =
+                        next_packet->line_end_index + 1;
+                } else {
+                    break;  // Packet is still out-of-order
                 }
-            } else if (packet.line_index >
-                       file_buffer->next_expected_line_index) {
-                // Packet is out-of-order, store it in the file buffer
-                printf("packet is out-of-order!\n");
-                file_buffer->buffer[packet.line_index] = packet;
             }
+        } else if (packet.line_index > file_buffer->next_expected_line_index) {
+            // Packet is out-of-order, store it in the file buffer
+            printf("packet is out-of-order!\n");
+            file_buffer->buffer[packet.line_index] = packet;
+        }
 
-            if (completed_files == MAX_FILES) {
-                printf("All transmissions have been completed!\n");
-                concatAndSendToClient(sockfd, their_addr, addr_len);
+        if (completed_files == MAX_FILES) {
+            printf("All transmissions have been completed!\n");
+            concatAndSendToClient(sockfd, their_addr, addr_len);
 
-                break;
-                // reset the server to receive again
-                // completed_files =
-                //     0;  // TODO: this doesn't seem to work on second try
-                // clearServerFiles();
-            }
+            break;
+            // reset the server to receive again
+            // completed_files =
+            //     0;  // TODO: this doesn't seem to work on second try
+            // clearServerFiles();
         }
         printf("\n");
     }

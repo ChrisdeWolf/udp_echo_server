@@ -111,6 +111,7 @@ extern int sendAndWaitForACK(int sockfd, struct addrinfo *p, Packet *packet) {
 extern void sendServerACK(int sockfd, struct addrinfo *p) {
     Packet ackPacket;
     ackPacket.ack = 1;
+    ackPacket.nack = 0;
     if (sendPacket(sockfd, p, &ackPacket) < 0) {
         perror("ACK sending failed");
     }
@@ -119,6 +120,7 @@ extern void sendServerACK(int sockfd, struct addrinfo *p) {
 /* sendServerNACK - send a negative-acknowledgement (NACK) to the server */
 extern void sendServerNACK(int sockfd, struct addrinfo *p) {
     Packet nackPacket;
+    nackPacket.ack = 0;
     nackPacket.nack = 1;
     if (sendPacket(sockfd, p, &nackPacket) < 0) {
         perror("NACK sending failed");

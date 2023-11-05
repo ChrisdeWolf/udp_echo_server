@@ -8,11 +8,24 @@
 
 #include "connection_structs.h"
 
+/* serverPrintUsage - server user options help */
+extern void serverPrintUsage() {
+    printf("Usage: server [options]\n");
+    printf("Options:\n");
+    printf(
+        "  --simulate-lost-packets: Enable random lost packets simulation\n");
+    printf(
+        "  --simulate-damaged-packets: Enable random damaged packet simulation "
+        "(will use NACKs)\n");
+    printf("  -h, --help: Display this help message\n");
+}
+
 /* sendClientACK - send an acknowledgement (ACK) to the client */
 extern void sendClientACK(int sockfd, struct sockaddr_storage their_addr,
                           socklen_t addr_len) {
     Packet ackPacket;
     ackPacket.ack = 1;
+    ackPacket.nack = 0;
     if (sendto(sockfd, &ackPacket, sizeof(Packet), 0,
                (struct sockaddr *)&their_addr, addr_len) < 0) {
         perror("ACK sending failed");
@@ -23,6 +36,7 @@ extern void sendClientACK(int sockfd, struct sockaddr_storage their_addr,
 extern void sendClientNACK(int sockfd, struct sockaddr_storage their_addr,
                            socklen_t addr_len) {
     Packet nackPacket;
+    nackPacket.ack = 0;
     nackPacket.nack = 1;
     if (sendto(sockfd, &nackPacket, sizeof(Packet), 0,
                (struct sockaddr *)&their_addr, addr_len) < 0) {
