@@ -29,11 +29,7 @@ const int file_sizes[10] = {9, 9, 10, 9, 8, 12, 12, 8, 7, 11};
 char file_names[100][256];
 
 /* cleanupClientFiles - cleanup concatendated.txt file */
-void cleanupClientFiles() {
-    if (remove("./client_files/concatenated.txt") != 0) {
-        perror("File deletion error");
-    }
-}
+void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 
 /* allConnectionsFinished - check if all file transmissions have completed
     returns 1 - all file transmissions are complete
@@ -284,7 +280,13 @@ int main(int argc, char *argv[]) {
 
         /* generate and send data */
         generatePayload(connection, packet);
-        sendAndWaitForACK(sockfd, p, packet);
+        int success = sendAndWaitForACK(sockfd, p, packet);
+        if (success == 0) {
+            printf(
+                "Max Retransmissions hit, double-check server "
+                "connection\n");
+            exit(1);
+        }
 
         /* cleanup */
         clearPacketBuffer(packet);
