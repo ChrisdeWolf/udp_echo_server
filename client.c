@@ -218,6 +218,8 @@ int main(int argc, char *argv[]) {
     int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int rv;
+    Packet packets[100];  // for unordered packet delivery
+    int packetIndex = 0;  // for unordered packet delivery
 
     /* client initialization */
     cleanupClientFiles();
@@ -228,9 +230,23 @@ int main(int argc, char *argv[]) {
     }
 
     /* check arguments */
-    if (argc != 2) {
-        fprintf(stderr, "usage: ./client SERVER_IP\n");
+    int simulateUnorderedPackets = 0;
+    if (argc < 2) {
+        fprintf(stderr, "usage: ./client SERVER_IP [options]\n");
         exit(1);
+    }
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            clientPrintUsage();
+            exit(0);
+        } else if (strcmp(argv[i], "--simulate-unordered-packets") == 0) {
+            simulateUnorderedPackets = 1;
+            // Initialize the packets
+            for (int i = 0; i < 100; i++) {
+                clearPacketBuffer(&packets[i]);
+                packets[i].file_size = -1;  // set to an invalid value
+            }
+        }
     }
 
     /* socket configuration */
@@ -278,6 +294,16 @@ int main(int argc, char *argv[]) {
                    randomFileIndex);
         }
 
+        /* if the --simulate-unordered-packets flag is set */
+        if (simulateUnorderedPackets == 1) {
+            // Generate the payload for the current connection
+            clearPacketBuffer(&packets[packetIndex]);  // Clear the buffer
+            generatePayload(connection, &packets[packetIndex]);
+            // Move to the next index for the next packet
+            packetIndex++;
+            continue;
+        }
+
         /* generate and send data */
         generatePayload(connection, packet);
         int success = sendAndWaitForACK(sockfd, p, packet);
@@ -292,6 +318,30 @@ int main(int argc, char *argv[]) {
         clearPacketBuffer(packet);
         free(packet);
         printf("\n");
+    }
+
+    /* if the --simulate-unordered-packets flag is set */
+    if (simulateUnorderedPackets == 1) {
+        // Shuffle the packets
+        for (int i = packetIndex - 1; i > 0; i--) {
+            int j = rand() % (i + 1);
+            Packet temp = packets[i];
+            packets[i] = packets[j];
+            packets[j] = temp;
+        }
+
+        // send the shuffled packets
+        for (int i = 0; i < packetIndex; i++) {
+            if (packets[i].file_size != -1) {
+                int success = sendAndWaitForACK(sockfd, p, &packets[i]);
+                if (success == 0) {
+                    printf(
+                        "Max Retransmissions hit, double-check server "
+                        "connection\n");
+                    exit(1);
+                }
+            }
+        }
     }
 
     /* receive concatenated files from server */

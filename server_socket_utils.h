@@ -8,9 +8,9 @@
 
 #include "connection_structs.h"
 
-/* serverPrintUsage - server user options help */
+/* serverPrintUsage - server user options and help */
 extern void serverPrintUsage() {
-    printf("Usage: server [options]\n");
+    printf("Usage: ./server [options]\n");
     printf("Options:\n");
     printf(
         "  --simulate-lost-packets: Enable random lost packets simulation\n");

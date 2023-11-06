@@ -8,7 +8,18 @@
 
 #include "connection_structs.h"
 
-/* sendPacket - uses sendTo to send data via socket connection
+/* clientPrintUsage - client user options and help */
+extern void clientPrintUsage() {
+    printf("Usage: ./client SERVER_IP [options]\n");
+    printf("Options:\n");
+    printf(
+        "  --simulate-unordered-packets: Enables unordered packet delivery "
+        "simulation\n");
+    printf("  -h, --help: Display this help message\n");
+}
+
+/*
+ * sendPacket - uses sendTo to send data via socket connection
  *  returns -1 - failure
  *  returns positive int - success
  */
