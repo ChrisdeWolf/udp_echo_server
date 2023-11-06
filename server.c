@@ -22,7 +22,7 @@
 #include "server_socket_utils.h"
 #include "socket_utils.h"
 
-int completed_files = 0;  // TODO: avoid globals
+int completed_files = 0;
 char concatedFilePath[256] = "./server_files/concatenated.txt";
 
 /* clearServerFiles - clears out files on the server */

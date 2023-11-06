@@ -24,7 +24,7 @@
 #include "connection_structs.h"
 #include "socket_utils.h"
 
-Connection connections[MAX_FILES];  // TODO: move this into code
+Connection connections[MAX_FILES];
 const int file_sizes[10] = {9, 9, 10, 9, 8, 12, 12, 8, 7, 11};
 char file_names[100][256];
 
