@@ -229,7 +229,7 @@ int main(int argc, char *argv[]) {
         connections[i].initialized = 0;
     }
 
-    /* check arguments */
+    /* handle help and opts */
     int simulateUnorderedPackets = 0;
     if (argc < 2) {
         fprintf(stderr, "usage: ./client SERVER_IP [options]\n");
