@@ -57,6 +57,7 @@ void clearServerFiles() {
 void initializeFileBuffers(FileBuffer file_buffers[]) {
     for (int i = 0; i < MAX_FILES; i++) {
         file_buffers[i].next_expected_line_index = 0;
+        memset(file_buffers[i].buffer, 0, sizeof(file_buffers[i].buffer));
     }
 }
 
@@ -200,6 +201,7 @@ int main(int argc, char *argv[]) {
     FileBuffer file_buffers[MAX_FILES];
     socklen_t addr_len;
     char s[INET6_ADDRSTRLEN];
+    int reset_env = 0;
 
     /* server initialization */
     clearServerFiles();
@@ -264,6 +266,13 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
 
+        // handle re-initialization between client-server transmissions cycles
+        if (reset_env == 1) {
+            clearServerFiles();
+            initializeFileBuffers(file_buffers);
+            reset_env = 0;
+        }
+
         printf("server: got packet from %s\n",
                inet_ntop(their_addr.ss_family,
                          get_in_addr((struct sockaddr *)&their_addr), s,
@@ -326,11 +335,9 @@ int main(int argc, char *argv[]) {
             printf("All transmissions have been completed!\n");
             concatAndSendToClient(sockfd, their_addr, addr_len);
 
-            break;
             // reset the server to receive again
-            // completed_files =
-            //     0;  // TODO: this doesn't seem to work on second try
-            // clearServerFiles();
+            completed_files = 0;
+            reset_env = 1;
         }
         printf("\n");
     }
