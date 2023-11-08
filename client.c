@@ -31,6 +31,45 @@ char file_names[100][256];
 /* cleanupClientFiles - cleanup concatendated.txt file */
 void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 
+/*
+ * listenForServiceBroadcast - listens for beacons from an advertising service
+ */
+void listenForServiceBroadcast() {
+    int broadcast_sock;
+    struct sockaddr_in recvAddr;
+
+    // create the broadcast socket
+    broadcast_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    // Set up the receiver address
+    memset(&recvAddr, 0, sizeof(recvAddr));
+    recvAddr.sin_family = AF_INET;
+    recvAddr.sin_addr.s_addr = htonl(INADDR_ANY);  // Listen on all interfaces
+    recvAddr.sin_port = htons(atoi(SERVICE_DISCOVERY_PORT));
+    // Bind the socket to the broadcast port
+    bind(broadcast_sock, (struct sockaddr *)&recvAddr, sizeof(recvAddr));
+
+    // use a receive loop to wait for the server's broadcast
+    while (1) {
+        printf("Listening for server broadcast...\n");
+        BroadcastPacket receivedPacket;
+        ssize_t bytesRead = recvfrom(broadcast_sock, &receivedPacket,
+                                     sizeof(receivedPacket), 0, NULL, NULL);
+        if (bytesRead < 0) {
+            perror("receive error");
+            continue;
+        }
+
+        printf("Received server broadcast. Service Port#: %d\n",
+               receivedPacket.service_port);
+        // check if the received broadcast packet is from the server
+        if (receivedPacket.ack == 1) {
+            break;
+        }
+    }
+
+    close(broadcast_sock);
+}
+
 /* allConnectionsFinished - check if all file transmissions have completed
     returns 1 - all file transmissions are complete
     returns 0 - there are still unfinished transmissions
@@ -195,7 +234,7 @@ int receiveWithTimeout(int sockfd, struct addrinfo *p) {
         return -1;  // TIMED-OUT!
     }
 
-    // listen for incoming packets fromt the server
+    // listen for incoming packets from the server
     Packet receivedPacket;
     socklen_t addr_len = sizeof(p);
     ssize_t data_len = recvfrom(sockfd, &receivedPacket, sizeof(Packet), 0,
@@ -231,11 +270,14 @@ int main(int argc, char *argv[]) {
 
     /* handle help and opts */
     int simulateUnorderedPackets = 0;
+    int service_discovery_enabled = 0;
     if (argc < 2) {
-        fprintf(stderr, "usage: ./client SERVER_IP [options]\n");
+        fprintf(stderr,
+                "usage: ./client SERVER_IP [options]\nor\n"
+                "       ./client --enable-service-discovery");
         exit(1);
     }
-    for (int i = 2; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             clientPrintUsage();
             exit(0);
@@ -246,7 +288,15 @@ int main(int argc, char *argv[]) {
                 clearPacketBuffer(&packets[i]);
                 packets[i].file_size = -1;  // set to an invalid value
             }
+        } else if (strcmp(argv[i], "--enable-service-discovery") == 0) {
+            service_discovery_enabled = 1;
         }
+    }
+    printf("simulateUnorderedPackets: %d, service_discovery_enabled: %d\n",
+           simulateUnorderedPackets, service_discovery_enabled);
+
+    if (service_discovery_enabled == 1) {
+        listenForServiceBroadcast();
     }
 
     /* socket configuration */

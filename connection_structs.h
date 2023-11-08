@@ -14,6 +14,8 @@
 #define MAX_FILES 10           // max # of files in an exchange
 #define MAX_LINES 100          // max lines a file is allowed to have
 #define TIMEOUT_SEC 1          // timeout (seconds) to wait until retransmission
+#define SERVICE_DISCOVERY_PORT "8888"
+#define BEACON_INTERVAL_SEC 3  // beacon interval in seconds
 
 // DATA STRUCTURES
 typedef struct {
@@ -27,6 +29,11 @@ typedef struct {
     int nack;                 // negative-acknowledgment, 1=data damaged
     char buffer[MAXBUFLEN];   // data
 } Packet;
+
+typedef struct {
+    int service_port;  // Port # of the service
+    int ack;           // acknowledgement, 1=client connecting
+} BroadcastPacket;
 
 typedef struct {
     int initialized;  // bool - is connection initialized

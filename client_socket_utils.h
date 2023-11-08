@@ -10,11 +10,16 @@
 
 /* clientPrintUsage - client user options and help */
 extern void clientPrintUsage() {
-    printf("Usage: ./client SERVER_IP [options]\n");
+    printf(
+        "usage: ./client SERVER_IP [options]\nor\n"
+        "       ./client --enable-service-discovery [options]\n");
     printf("Options:\n");
     printf(
         "  --simulate-unordered-packets: Enables unordered packet delivery "
         "simulation\n");
+    printf(
+        "  --enable-service-discovery: Enables automatic service discovery, "
+        "SERVER_IP does not need to be provided\n");
     printf("  -h, --help: Display this help message\n");
 }
 

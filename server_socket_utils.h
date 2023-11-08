@@ -17,6 +17,8 @@ extern void serverPrintUsage() {
     printf(
         "  --simulate-damaged-packets: Enable random damaged packet simulation "
         "(will use NACKs)\n");
+    printf(
+        "  --enable-service-discovery: Enable automatic service discovery\n");
     printf("  -h, --help: Display this help message\n");
 }
 

@@ -61,6 +61,108 @@ void initializeFileBuffers(FileBuffer file_buffers[]) {
     }
 }
 
+void broadcastService() {
+    int broadcast_sock;
+    struct addrinfo hints, *broadcast_info, *p;
+    int rv;
+
+    // broadcast address information
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_PASSIVE;  // use my IP
+
+    // For the broadcast socket, create a socket with broadcast capabilities
+    if ((rv = getaddrinfo(NULL, SERVICE_DISCOVERY_PORT, &hints,
+                          &broadcast_info)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return;
+    }
+    // Loop through all the results and bind to the first we can
+    for (p = broadcast_info; p != NULL; p = p->ai_next) {
+        if ((broadcast_sock =
+                 socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("server: socket");
+            continue;
+        }
+        int broadcastEnable = 1;  // enabled broadcast option for the socket
+        if (setsockopt(broadcast_sock, SOL_SOCKET, SO_BROADCAST,
+                       &broadcastEnable, sizeof(broadcastEnable)) == -1) {
+            perror("setsockopt (SO_BROADCAST)");
+            return;
+        }
+        break;
+    }
+    if (p == NULL) {
+        fprintf(stderr, "server: failed to bind broadcast socket\n");
+        return;
+    }
+    freeaddrinfo(broadcast_info);
+
+    // Implement your broadcasting logic here
+    // You can use the 'broadcast_sock' to send broadcast messages
+    fd_set read_fds;
+    struct timeval timeout;
+    struct sockaddr_in broadcast_addr;
+    socklen_t addr_len = sizeof(broadcast_addr);
+    // setup the broadcast message
+    BroadcastPacket broadcastPacket;
+    broadcastPacket.service_port = atoi(SERVERPORT);
+    broadcastPacket.ack = 0;  // set the acknowledgment to 0 for broadcast
+
+    // Set up the broadcast address
+    memset(&broadcast_addr, 0, addr_len);
+    broadcast_addr.sin_family = AF_INET;
+    broadcast_addr.sin_port = htons(atoi(SERVICE_DISCOVERY_PORT));
+    broadcast_addr.sin_addr.s_addr =
+        inet_addr("127.0.0.1");  // Loopback address
+    // broadcast_addr.sin_addr.s_addr =
+    //     INADDR_BROADCAST;  // Use the broadcast address: 255.255.255.255
+
+    // setup timeout timer for service discovery
+    timeout.tv_sec = BEACON_INTERVAL_SEC;
+    timeout.tv_usec = 0;
+    FD_ZERO(&read_fds);
+    FD_SET(broadcast_sock, &read_fds);
+
+    while (1) {
+        printf("Sending Service Discovery Beacon...\n");
+        if (sendto(broadcast_sock, &broadcastPacket, sizeof(BroadcastPacket), 0,
+                   (struct sockaddr *)&broadcast_addr, addr_len) == -1) {
+            perror("sendto");
+            continue;
+        }
+
+        // use of select here for the async timer
+        // https://beej.us/guide/bgnet/html/split/slightly-advanced-techniques.html#select
+        int ready = select(broadcast_sock + 1, &read_fds, NULL, NULL, &timeout);
+        if (ready < 0) {
+            perror("Select failed");
+            continue;
+        } else if (ready == 0) {
+            continue;
+        }
+
+        // listen for incoming packets
+        BroadcastPacket receivedPacket;
+        socklen_t addr_len = sizeof(p);
+        ssize_t data_len =
+            recvfrom(broadcast_sock, &receivedPacket, sizeof(BroadcastPacket),
+                     0, (struct sockaddr *)&p, &addr_len);
+        if (data_len < 0) {
+            perror("receive error");
+            continue;
+        }
+
+        printf("received client response - ack=%d\n", receivedPacket.ack);
+        if (receivedPacket.ack == 1) {
+            break;
+        }
+    }
+
+    close(broadcast_sock);  // Close the broadcast socket when done
+}
+
 /* get_in_addr - get sockaddr, IPv4 or IPv6 */
 void *get_in_addr(struct sockaddr *sa) {
     if (sa->sa_family == AF_INET) {
@@ -210,6 +312,7 @@ int main(int argc, char *argv[]) {
     /* handle help and opts */
     int simulateLostPackets = 0;
     int simulateDamagedPackets = 0;
+    int service_discovery_enabled = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             serverPrintUsage();
@@ -218,10 +321,17 @@ int main(int argc, char *argv[]) {
             simulateLostPackets = 1;
         } else if (strcmp(argv[i], "--simulate-damaged-packets") == 0) {
             simulateDamagedPackets = 1;
+        } else if (strcmp(argv[i], "--enable-service-discovery") == 0) {
+            service_discovery_enabled = 1;
         }
     }
-    printf("simulateLostPackets: %d, simulateDamagedPackets: %d\n",
-           simulateLostPackets, simulateDamagedPackets);
+    printf(
+        "simulateLostPackets: %d, simulateDamagedPackets: %d, "
+        "service_discovery_enabled: %d\n",
+        simulateLostPackets, simulateDamagedPackets, service_discovery_enabled);
+    if (service_discovery_enabled == 1) {
+        broadcastService();
+    }
 
     /* socket configuration */
     memset(&hints, 0, sizeof hints);
@@ -240,13 +350,11 @@ int main(int argc, char *argv[]) {
             perror("server: socket");
             continue;
         }
-
         if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
             perror("server: bind");
             continue;
         }
-
         break;
     }
     if (p == NULL) {
