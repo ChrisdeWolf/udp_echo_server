@@ -31,6 +31,8 @@ typedef struct {
 } Packet;
 
 typedef struct {
+    // TODO: char service_address[INET_ADDRSTRLEN];  // IP Address of the
+    // service
     int service_port;  // Port # of the service
     int ack;           // acknowledgement, 1=client connecting
 } BroadcastPacket;

@@ -34,8 +34,10 @@ void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 /*
  * listenForServiceBroadcast - listens for a broadcast from an advertising
  * service
+ * returns service PORT# - success
+ * returns -1 - failure/no service found
  */
-void listenForServiceBroadcast() {
+int listenForServiceBroadcast() {
     int broadcast_sock;
     struct sockaddr_in recvAddr;
     // create the broadcast socket
@@ -43,12 +45,12 @@ void listenForServiceBroadcast() {
     // Set up the receiver address
     memset(&recvAddr, 0, sizeof(recvAddr));
     recvAddr.sin_family = AF_INET;
-    recvAddr.sin_addr.s_addr = htonl(INADDR_ANY);  // Listen on all interfaces
     recvAddr.sin_port = htons(atoi(SERVICE_DISCOVERY_PORT));
+    recvAddr.sin_addr.s_addr = htonl(INADDR_ANY);  // Listen on all interfaces
     // Bind the socket to the broadcast port
     bind(broadcast_sock, (struct sockaddr *)&recvAddr, sizeof(recvAddr));
 
-    // use a receive loop to wait for the server's broadcast
+    // use a receive loop to listen for the server's broadcast
     while (1) {
         printf("Listening for server broadcast...\n");
         BroadcastPacket receivedPacket;
@@ -58,16 +60,17 @@ void listenForServiceBroadcast() {
             perror("receive error");
             continue;
         }
-
-        printf("Received server broadcast. Service Port#: %d\n",
+        printf("Received server broadcast from %d\n",
                receivedPacket.service_port);
+        // TODO: below could be better...
         // check if the received broadcast packet is from the server
-        if (receivedPacket.ack == 1) {
-            break;
+        if (receivedPacket.ack == 0) {
+            return receivedPacket.service_port;
         }
     }
 
     close(broadcast_sock);
+    return -1;
 }
 
 /* allConnectionsFinished - check if all file transmissions have completed
@@ -295,14 +298,19 @@ int main(int argc, char *argv[]) {
     printf("simulateUnorderedPackets: %d, service_discovery_enabled: %d\n",
            simulateUnorderedPackets, service_discovery_enabled);
 
-    if (service_discovery_enabled == 1) {
-        listenForServiceBroadcast();
-    }
-
     /* socket configuration */
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET6;  // set to AF_INET to use IPv4
     hints.ai_socktype = SOCK_DGRAM;
+
+    // TODO
+    // // char *server_port = SERVERPORT;
+    // if (service_discovery_enabled == 1) {
+    //     int received_port = listenForServiceBroadcast();
+    //     if (received_port != -1) {
+    //         printf("FOUND SERVICE\n");
+    //     }
+    // }
 
     if ((rv = getaddrinfo(argv[1], SERVERPORT, &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
