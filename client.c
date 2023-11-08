@@ -32,12 +32,12 @@ char file_names[100][256];
 void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 
 /*
- * listenForServiceBroadcast - listens for beacons from an advertising service
+ * listenForServiceBroadcast - listens for a broadcast from an advertising
+ * service
  */
 void listenForServiceBroadcast() {
     int broadcast_sock;
     struct sockaddr_in recvAddr;
-
     // create the broadcast socket
     broadcast_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     // Set up the receiver address

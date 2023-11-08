@@ -61,24 +61,26 @@ void initializeFileBuffers(FileBuffer file_buffers[]) {
     }
 }
 
+/*
+ * broadcastService - advertises the server's service using a broadcast
+ */
 void broadcastService() {
     int broadcast_sock;
     struct addrinfo hints, *broadcast_info, *p;
     int rv;
-
     // broadcast address information
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;  // use my IP
 
-    // For the broadcast socket, create a socket with broadcast capabilities
+    // create a socket with broadcast capabilities
     if ((rv = getaddrinfo(NULL, SERVICE_DISCOVERY_PORT, &hints,
                           &broadcast_info)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return;
     }
-    // Loop through all the results and bind to the first we can
+    // loop through all the results and bind to the first we can
     for (p = broadcast_info; p != NULL; p = p->ai_next) {
         if ((broadcast_sock =
                  socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
@@ -99,12 +101,11 @@ void broadcastService() {
     }
     freeaddrinfo(broadcast_info);
 
-    // Implement your broadcasting logic here
-    // You can use the 'broadcast_sock' to send broadcast messages
     fd_set read_fds;
     struct timeval timeout;
     struct sockaddr_in broadcast_addr;
     socklen_t addr_len = sizeof(broadcast_addr);
+
     // setup the broadcast message
     BroadcastPacket broadcastPacket;
     broadcastPacket.service_port = atoi(SERVERPORT);
@@ -114,8 +115,7 @@ void broadcastService() {
     memset(&broadcast_addr, 0, addr_len);
     broadcast_addr.sin_family = AF_INET;
     broadcast_addr.sin_port = htons(atoi(SERVICE_DISCOVERY_PORT));
-    broadcast_addr.sin_addr.s_addr =
-        inet_addr("127.0.0.1");  // Loopback address
+    broadcast_addr.sin_addr.s_addr = inet_addr("127.0.0.1");  // localhost
     // broadcast_addr.sin_addr.s_addr =
     //     INADDR_BROADCAST;  // Use the broadcast address: 255.255.255.255
 
