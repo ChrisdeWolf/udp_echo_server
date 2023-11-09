@@ -64,7 +64,7 @@ void initializeFileBuffers(FileBuffer file_buffers[]) {
 /*
  * broadcastServiceProcess - advertises the server's service using a broadcast
  */
-void broadcastServiceProcess() {
+void broadcastServiceProcess(const char *service_ip) {
     int broadcast_sock;
     struct addrinfo hints, *broadcast_info, *p;
     int rv;
@@ -102,8 +102,8 @@ void broadcastServiceProcess() {
 
     // setup the broadcast message
     BroadcastPacket broadcastPacket;
+    strncpy(broadcastPacket.service_ip, service_ip, INET_ADDRSTRLEN);
     broadcastPacket.service_port = atoi(SERVERPORT);
-    broadcastPacket.ack = 0;  // set the acknowledgment to 0 for broadcast
 
     // Set up the broadcast addressing
     struct sockaddr_in broadcast_addr;
@@ -295,6 +295,7 @@ int main(int argc, char *argv[]) {
     int simulateLostPackets = 0;
     int simulateDamagedPackets = 0;
     int service_discovery_enabled = 0;
+    char *service_ip = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             serverPrintUsage();
@@ -305,6 +306,11 @@ int main(int argc, char *argv[]) {
             simulateDamagedPackets = 1;
         } else if (strcmp(argv[i], "--enable-service-discovery") == 0) {
             service_discovery_enabled = 1;
+            // Check if there's an IP address argument
+            if (i + 1 < argc) {
+                service_ip = argv[i + 1];
+                i++;
+            }
         }
     }
     printf(
@@ -342,18 +348,16 @@ int main(int argc, char *argv[]) {
     }
     freeaddrinfo(servinfo);
 
-    // TODO
     if (service_discovery_enabled == 1) {
+        // fork a new process to handle broadcasting
         pid_t broadcastProcess;
-        // broadcastService(sockfd, their_addr);
-        // Fork a new process to handle broadcasting
         broadcastProcess = fork();
         if (broadcastProcess < 0) {
             perror("Fork failed");
             exit(1);
         } else if (broadcastProcess == 0) {
-            // This is the child process for broadcasting
-            broadcastServiceProcess();
+            // child process for broadcasting
+            broadcastServiceProcess(service_ip);
             exit(0);
         }
     }

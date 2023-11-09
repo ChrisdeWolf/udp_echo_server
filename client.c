@@ -34,10 +34,12 @@ void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 /*
  * listenForServiceBroadcast - listens for a broadcast from an advertising
  * service
- * returns service PORT# - success
- * returns -1 - failure/no service found
+ * returns BroadcastPacket - populated with values if success
+ * returns BroadcastPacket - populated with -1 values if failure
  */
-int listenForServiceBroadcast() {
+BroadcastPacket listenForServiceBroadcast() {
+    BroadcastPacket receivedPacket;
+    receivedPacket.service_port = -1;
     int broadcast_sock;
     struct sockaddr_in recvAddr;
     // create the broadcast socket
@@ -53,24 +55,22 @@ int listenForServiceBroadcast() {
     // use a receive loop to listen for the server's broadcast
     while (1) {
         printf("Listening for server broadcast...\n");
-        BroadcastPacket receivedPacket;
         ssize_t bytesRead = recvfrom(broadcast_sock, &receivedPacket,
                                      sizeof(receivedPacket), 0, NULL, NULL);
         if (bytesRead < 0) {
             perror("receive error");
             continue;
         }
-        printf("Received server broadcast from %d\n",
-               receivedPacket.service_port);
-        // TODO: below could be better...
+        printf("Received service broadcast from %s:%d\n",
+               receivedPacket.service_ip, receivedPacket.service_port);
         // check if the received broadcast packet is from the server
-        if (receivedPacket.ack == 0) {
-            return receivedPacket.service_port;
+        if (receivedPacket.service_port != -1) {
+            return receivedPacket;
         }
     }
 
     close(broadcast_sock);
-    return -1;
+    return receivedPacket;
 }
 
 /* allConnectionsFinished - check if all file transmissions have completed
@@ -303,16 +303,24 @@ int main(int argc, char *argv[]) {
     hints.ai_family = AF_INET6;  // set to AF_INET to use IPv4
     hints.ai_socktype = SOCK_DGRAM;
 
-    // TODO
-    // // char *server_port = SERVERPORT;
-    // if (service_discovery_enabled == 1) {
-    //     int received_port = listenForServiceBroadcast();
-    //     if (received_port != -1) {
-    //         printf("FOUND SERVICE\n");
-    //     }
-    // }
+    char server_ip[INET_ADDRSTRLEN];
+    char server_port[6];  // assume a port is 5 chars or less
+    if (service_discovery_enabled == 1) {
+        // try to find broadcasted IP Address and PORT #
+        BroadcastPacket service_info = listenForServiceBroadcast();
+        if (service_info.service_port != -1) {
+            printf("FOUND SERVICE\n");
+            strncpy(server_ip, service_info.service_ip, sizeof(server_ip) - 1);
+            snprintf(server_port, sizeof(server_port), "%d",
+                     service_info.service_port);
+        }
+    } else {
+        // use command line arg for IP Address and Default PORT #
+        strncpy(server_ip, argv[1], sizeof(server_ip) - 1);
+        strncpy(server_port, SERVERPORT, sizeof(server_port) - 1);
+    }
 
-    if ((rv = getaddrinfo(argv[1], SERVERPORT, &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(server_ip, server_port, &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }

@@ -15,10 +15,12 @@ extern void serverPrintUsage() {
     printf(
         "  --simulate-lost-packets: Enable random lost packets simulation\n");
     printf(
-        "  --simulate-damaged-packets: Enable random damaged packet simulation "
-        "(will use NACKs)\n");
+        "  --simulate-damaged-packets: Enable random damaged packet\n"
+        "  simulation (will use NACKs)\n");
     printf(
-        "  --enable-service-discovery: Enable automatic service discovery\n");
+        "  --enable-service-discovery IP_ADDRESS: Enable automatic service\n"
+        "  discovery. Must be followed by IP_ADDRESS to advertise (server\n"
+        "  address - 127.0.0.1 if localhost)\n");
     printf("  -h, --help: Display this help message\n");
 }
 
