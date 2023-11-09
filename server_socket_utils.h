@@ -16,11 +16,19 @@ extern void serverPrintUsage() {
         "  --simulate-lost-packets: Enable random lost packets simulation\n");
     printf(
         "  --simulate-damaged-packets: Enable random damaged packet\n"
-        "  simulation (will use NACKs)\n");
+        "    simulation (will use NACKs)\n");
     printf(
         "  --enable-service-discovery IP_ADDRESS: Enable automatic service\n"
-        "  discovery. Must be followed by IP_ADDRESS to advertise (server\n"
-        "  address - 127.0.0.1 if localhost)\n");
+        "    discovery. Must be followed by IP_ADDRESS to advertise (server\n"
+        "    address - 127.0.0.1 if localhost).\n"
+        "    Should not be used with --use-registry-server\n");
+    printf(
+        "  --use-registry-server IP_ADDRESS: (NOT WORKING FULLY) Registers "
+        "service with an \n"
+        "    intermediary registry_server. Must be followed by IP_ADDRESS to\n"
+        "    register (server address - 127.0.0.1 if localhost).\n"
+        "    Be sure ./registry_server is running before using this option.\n"
+        "    Should not be used with --enable-service-discovery\n");
     printf("  -h, --help: Display this help message\n");
 }
 

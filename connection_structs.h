@@ -15,7 +15,9 @@
 #define MAX_LINES 100          // max lines a file is allowed to have
 #define TIMEOUT_SEC 1          // timeout (seconds) to wait until retransmission
 #define SERVICE_DISCOVERY_PORT "8888"
-#define BEACON_INTERVAL_SEC 3  // beacon interval in seconds
+#define BEACON_INTERVAL_SEC 3           // beacon interval in seconds
+#define REGISTRY_SERVER_IP "127.0.0.1"  // registry server IP
+#define REGISTRY_SERVER_PORT "8888"
 
 // DATA STRUCTURES
 typedef struct {
@@ -33,6 +35,8 @@ typedef struct {
 typedef struct {
     char service_ip[INET_ADDRSTRLEN];  // IP Address of the advertised service
     int service_port;                  // Port # of the service
+    int register_service;  // to register the attached data to registry (server)
+    int receive_service;   // to receive service info from registry (client)
 } BroadcastPacket;
 
 typedef struct {

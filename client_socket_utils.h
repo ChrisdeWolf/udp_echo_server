@@ -12,14 +12,22 @@
 extern void clientPrintUsage() {
     printf(
         "usage: ./client SERVER_IP [options]\nor\n"
-        "       ./client --enable-service-discovery [options]\n");
+        "       ./client --enable-service-discovery [options]\nor\n"
+        "       (NOT WORKING FULLY) ./client --use-registry-server "
+        "[options]\n");
     printf("Options:\n");
     printf(
         "  --simulate-unordered-packets: Enables unordered packet delivery "
         "simulation\n");
     printf(
         "  --enable-service-discovery: Enables automatic service discovery, "
-        "SERVER_IP does not need to be provided\n");
+        "SERVER_IP does not need to be provided\n"
+        "    Should not be used with --use-registry-server\n");
+    printf(
+        "  --use-registry-server: will make the client check the \n"
+        "    intermediary registry_server. (NOT WORKING FULLY)\n"
+        "    Be sure ./registry_server is running before using this option.\n"
+        "    Should not be used with --enable-service-discovery\n");
     printf("  -h, --help: Display this help message\n");
 }
 

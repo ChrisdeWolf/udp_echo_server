@@ -32,6 +32,103 @@ char file_names[100][256];
 void cleanupClientFiles() { remove("./client_files/concatenated.txt"); }
 
 /*
+ * getServiceFromRegistry - returns the registered service from registry_server
+ */
+BroadcastPacket getServiceFromRegistry() {
+    int sockfd;
+    struct addrinfo hints, *servinfo, *p;
+    int rv;
+    int attempts = 0;
+    fd_set read_fds;
+    struct timeval timeout;
+
+    /* socket configuration */
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET6;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    // setup request packet
+    BroadcastPacket requestPacket;
+    strncpy(requestPacket.service_ip, REGISTRY_SERVER_IP, INET_ADDRSTRLEN);
+    requestPacket.service_port = atoi(REGISTRY_SERVER_PORT);
+    requestPacket.receive_service = 1;  // to get the registry service info
+    requestPacket.register_service = 0;
+
+    if ((rv = getaddrinfo(REGISTRY_SERVER_IP, REGISTRY_SERVER_PORT, &hints,
+                          &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        requestPacket.service_port = -1;  // indicates an error
+        return requestPacket;
+    }
+
+    // loop through all the results and make a socket
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) ==
+            -1) {
+            perror("client: socket");
+            continue;
+        }
+        break;
+    }
+    if (p == NULL) {
+        fprintf(stderr, "client: failed to create socket\n");
+        requestPacket.service_port = -1;
+        freeaddrinfo(servinfo);
+        return requestPacket;
+    }
+
+    while (attempts < MAX_RETRANSMISSIONS) {
+        if (sendto(sockfd, &requestPacket, sizeof(BroadcastPacket), 0,
+                   p->ai_addr, p->ai_addrlen) == -1) {
+            perror("sendto");
+            requestPacket.service_port = -1;
+            return requestPacket;
+        } else {
+            printf(
+                "Requesting service information from the registry server...\n");
+        }
+
+        // setup timeout timer, longer timeout to give registry server some time
+        timeout.tv_sec = TIMEOUT_SEC * 5;
+        timeout.tv_usec = 0;
+        FD_ZERO(&read_fds);
+        FD_SET(sockfd, &read_fds);
+
+        int ready = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
+        if (ready < 0) {
+            perror("Select failed");
+            requestPacket.service_port = -1;
+            return requestPacket;
+        } else if (ready == 0) {
+            attempts++;
+            continue;
+        }
+
+        // listen for incoming packets from the registry_server
+        BroadcastPacket receivedPacket;
+        socklen_t addr_len = sizeof(p);
+        ssize_t data_len =
+            recvfrom(sockfd, &receivedPacket, sizeof(BroadcastPacket), 0,
+                     (struct sockaddr *)&p, &addr_len);
+        if (data_len < 0) {
+            perror("receive error");
+            requestPacket.service_port = -1;
+            return requestPacket;
+        }
+
+        printf(
+            "received server info from server_registry: service_ip=%s, "
+            "service_port=%d",
+            receivedPacket.service_ip, receivedPacket.service_port);
+
+        freeaddrinfo(servinfo);
+        close(sockfd);
+    }
+
+    return requestPacket;
+}
+
+/*
  * listenForServiceBroadcast - listens for a broadcast from an advertising
  * service
  * returns BroadcastPacket - populated with values if success
@@ -274,6 +371,7 @@ int main(int argc, char *argv[]) {
     /* handle help and opts */
     int simulateUnorderedPackets = 0;
     int service_discovery_enabled = 0;
+    int registry_server_enabled = 0;
     if (argc < 2) {
         fprintf(stderr,
                 "usage: ./client SERVER_IP [options]\nor\n"
@@ -293,10 +391,22 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(argv[i], "--enable-service-discovery") == 0) {
             service_discovery_enabled = 1;
+        } else if (strcmp(argv[i], "--use-registry-server") == 0) {
+            registry_server_enabled = 1;
         }
     }
-    printf("simulateUnorderedPackets: %d, service_discovery_enabled: %d\n",
-           simulateUnorderedPackets, service_discovery_enabled);
+    printf(
+        "simulateUnorderedPackets: %d, service_discovery_enabled: %d, "
+        "registry_server_enabled: %d\n",
+        simulateUnorderedPackets, service_discovery_enabled,
+        registry_server_enabled);
+    if (registry_server_enabled == 1 && service_discovery_enabled == 1) {
+        printf(
+            "Cannot use the following options at the same time: "
+            "--enable-service-discovery, --use-registry-server\n");
+        clientPrintUsage();
+        exit(0);
+    }
 
     /* socket configuration */
     memset(&hints, 0, sizeof hints);
@@ -309,10 +419,20 @@ int main(int argc, char *argv[]) {
         // try to find broadcasted IP Address and PORT #
         BroadcastPacket service_info = listenForServiceBroadcast();
         if (service_info.service_port != -1) {
-            printf("FOUND SERVICE\n");
             strncpy(server_ip, service_info.service_ip, sizeof(server_ip) - 1);
             snprintf(server_port, sizeof(server_port), "%d",
                      service_info.service_port);
+        }
+    } else if (registry_server_enabled == 1) {
+        BroadcastPacket service_info = getServiceFromRegistry();
+        if (service_info.service_port != -1) {
+            strncpy(server_ip, service_info.service_ip, sizeof(server_ip) - 1);
+            snprintf(server_port, sizeof(server_port), "%d",
+                     service_info.service_port);
+        } else if (service_info.service_port == -1) {
+            printf(
+                "Error or timeout finding server info from registry_server\n");
+            exit(0);
         }
     } else {
         // use command line arg for IP Address and Default PORT #

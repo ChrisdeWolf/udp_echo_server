@@ -61,6 +61,46 @@ void initializeFileBuffers(FileBuffer file_buffers[]) {
     }
 }
 
+/* addToRegistryServer - registers this service with the registry server */
+void addToRegistryServer(const char *service_ip) {
+    int registry_sock;
+    struct addrinfo hints, *registry_info, *p;
+    int rv;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    // create a socket for the registry server
+    if ((rv = getaddrinfo(REGISTRY_SERVER_IP, REGISTRY_SERVER_PORT, &hints,
+                          &registry_info)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+        return;
+    }
+    // loop through results and send the registration message
+    for (p = registry_info; p != NULL; p = p->ai_next) {
+        if ((registry_sock =
+                 socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("server: socket");
+            continue;
+        }
+        // create registration message
+        BroadcastPacket registrationPacket;
+        strncpy(registrationPacket.service_ip, service_ip, INET_ADDRSTRLEN);
+        registrationPacket.service_port = atoi(SERVERPORT);
+        registrationPacket.register_service = 1;
+        registrationPacket.receive_service = 0;
+        // send out registration to registry_server
+        if (sendto(registry_sock, &registrationPacket, sizeof(BroadcastPacket),
+                   0, p->ai_addr, p->ai_addrlen) == -1) {
+            perror("sendto");
+            close(registry_sock);
+            continue;
+        }
+        close(registry_sock);
+    }
+    freeaddrinfo(registry_info);
+}
+
 /*
  * broadcastServiceProcess - advertises the server's service using a broadcast
  */
@@ -294,6 +334,7 @@ int main(int argc, char *argv[]) {
     int simulateLostPackets = 0;
     int simulateDamagedPackets = 0;
     int service_discovery_enabled = 0;
+    int registry_server_enabled = 0;
     char *service_ip = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -305,7 +346,14 @@ int main(int argc, char *argv[]) {
             simulateDamagedPackets = 1;
         } else if (strcmp(argv[i], "--enable-service-discovery") == 0) {
             service_discovery_enabled = 1;
-            // Check if there's an IP address argument
+            // check if there's an IP address argument
+            if (i + 1 < argc) {
+                service_ip = argv[i + 1];
+                i++;
+            }
+        } else if (strcmp(argv[i], "--use-registry-server") == 0) {
+            registry_server_enabled = 1;
+            // check if there's an IP address argument
             if (i + 1 < argc) {
                 service_ip = argv[i + 1];
                 i++;
@@ -314,8 +362,16 @@ int main(int argc, char *argv[]) {
     }
     printf(
         "simulateLostPackets: %d, simulateDamagedPackets: %d, "
-        "service_discovery_enabled: %d\n",
-        simulateLostPackets, simulateDamagedPackets, service_discovery_enabled);
+        "service_discovery_enabled: %d, registry_server_enabled: %d\n",
+        simulateLostPackets, simulateDamagedPackets, service_discovery_enabled,
+        registry_server_enabled);
+    if (registry_server_enabled == 1 && service_discovery_enabled == 1) {
+        printf(
+            "Cannot use the following options at the same time: "
+            "--enable-service-discovery, --use-registry-server\n");
+        serverPrintUsage();
+        exit(0);
+    }
 
     /* socket configuration */
     memset(&hints, 0, sizeof hints);
@@ -346,6 +402,10 @@ int main(int argc, char *argv[]) {
         return 2;
     }
     freeaddrinfo(servinfo);
+
+    if (registry_server_enabled == 1) {
+        addToRegistryServer(service_ip);  // add service to registry server
+    }
 
     if (service_discovery_enabled == 1) {
         // fork a new process to handle broadcasting
