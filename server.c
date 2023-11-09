@@ -111,10 +111,9 @@ void broadcastServiceProcess(const char *service_ip) {
     memset(&broadcast_addr, 0, addr_len);
     broadcast_addr.sin_family = AF_INET;
     broadcast_addr.sin_port = htons(atoi(SERVICE_DISCOVERY_PORT));
-    broadcast_addr.sin_addr.s_addr = inet_addr("127.0.0.1");  // localhost
-    // TODO
-    // broadcast_addr.sin_addr.s_addr =
-    //     INADDR_BROADCAST;  // Use the broadcast address: 255.255.255.255
+    // INADDR_BROADCAST would not work and actually would break this
+    // current loopback functionality until a hard restart
+    broadcast_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     // setup timeout timer for service discovery (3 seconds)
     fd_set read_fds;
